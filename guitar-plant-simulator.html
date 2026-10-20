@@ -1,0 +1,1284 @@
+<title>Guitar Plant Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+<style>
+/* Layout: daylight engineering viewport (fixed look) on the left, themed telemetry panel with tabs on the right; stacks on phones */
+:root {
+  --bg: #e9edf1;
+  --panel: #f7f9fa;
+  --fg: #1b232c;
+  --muted: #5b6875;
+  --line: #d2d9e0;
+  --accent: #d9601c;
+  --good: #2b9459;
+  --warn: #c7870f;
+  --idle: #9aa5b0;
+  --font-ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* the 3D viewport is a fixed daylight scene in both themes */
+  --sky-top: #cfe0ee;
+  --sky-bot: #f1efe8;
+  --lbl-bg: rgba(255, 255, 255, 0.92);
+  --lbl-fg: #1d2733;
+  --lbl-line: rgba(30, 40, 50, 0.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161b; --panel: #192027; --fg: #e3e9ee; --muted: #94a2af; --line: #2b343e;
+    --accent: #ff8a3d; --good: #43c07c; --warn: #e2a935; --idle: #5b6773;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161b; --panel: #192027; --fg: #e3e9ee; --muted: #94a2af; --line: #2b343e;
+  --accent: #ff8a3d; --good: #43c07c; --warn: #e2a935; --idle: #5b6773;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; }
+.app {
+  height: 100%; display: flex; flex-direction: column; gap: 10px; box-sizing: border-box;
+  padding-block: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.brand { display: flex; flex-direction: column; min-width: 0; }
+.brand h1 { margin: 0; font-size: 18px; font-weight: 600; text-wrap: balance; }
+.brand span { color: var(--muted); font-size: 12px; }
+.clock { display: flex; align-items: baseline; gap: 10px; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.clock b { font-size: 22px; font-weight: 500; }
+.chip { font-family: var(--font-ui); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip.work { color: var(--good); border-color: var(--good); }
+.chip.break { color: var(--warn); border-color: var(--warn); }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+button, select { font-family: var(--font-ui); font-size: 13px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; font-family: var(--font-data); font-size: 12px; }
+.seg button:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 5px 5px 0; }
+label.tog { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.timeline { flex: 1 1 240px; min-width: 200px; }
+.tl { position: relative; height: 18px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); overflow: hidden; }
+.tl .w { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--good) 22%, transparent); }
+.tl .d { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); }
+.tl .now { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--fg); }
+.tl-scale { display: flex; justify-content: space-between; font-family: var(--font-data); font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 10px; }
+.viewport { position: relative; min-height: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: linear-gradient(180deg, var(--sky-top), var(--sky-bot)); }
+.viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lb { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: var(--font-ui); font-size: 11.5px; line-height: 1.25; color: var(--lbl-fg); background: var(--lbl-bg); border: 1px solid var(--lbl-line); border-radius: 3px; padding: 1px 5px; will-change: transform; }
+.lb.room { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 2px 6px; text-align: center; }
+.lb.room small { display: block; font-family: var(--font-data); font-size: 10.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: #4a5866; }
+.lb.step { font-weight: 600; padding: 1px 6px 1px 2px; display: flex; align-items: center; gap: 4px; border-width: 1.5px; }
+.lb.step i { font-style: normal; display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 2px; box-sizing: border-box; border-radius: 9px; color: #fff; font-family: var(--font-data); font-size: 10.5px; }
+.lb.yard { font-weight: 500; background: rgba(250, 248, 240, 0.94); }
+.lb.dim { font-family: var(--font-data); font-size: 11px; background: #fffef6; border-color: #8a7d55; color: #4b4223; }
+.lb.site { font-weight: 600; letter-spacing: .08em; background: rgba(60, 66, 72, 0.85); color: #f4f4f2; border-color: transparent; }
+.vp-tools { position: absolute; top: 10px; right: 10px; left: 10px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; pointer-events: none; }
+.vp-tools button { pointer-events: auto; font-size: 11.5px; font-weight: 600; letter-spacing: .05em; padding: 4px 8px; color: #1d2733; background: rgba(255, 255, 255, 0.9); border-color: rgba(30, 40, 50, 0.2); }
+.vp-tools button.on { background: #1d2733; color: #fff; border-color: #1d2733; }
+.vp-note { position: absolute; bottom: 10px; right: 10px; font-family: var(--font-data); font-size: 10.5px; color: #3a4652; background: rgba(255, 255, 255, 0.8); padding: 2px 6px; border-radius: 3px; }
+.legend { position: absolute; left: 10px; bottom: 10px; max-width: min(560px, calc(100% - 20px)); max-height: 46%; overflow: auto; font-size: 12px; color: #1d2733; background: rgba(255, 255, 255, 0.93); border: 1px solid rgba(30, 40, 50, 0.16); border-radius: 5px; padding: 7px 9px; }
+.legend h3 { margin: 0 0 4px; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: #56616d; }
+.legend .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 2px 12px; margin-bottom: 6px; }
+.legend label { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.legend input { margin: 0; }
+.legend .sw { width: 18px; height: 6px; border-radius: 3px; flex: none; }
+.legend .sw.dash { background-image: repeating-linear-gradient(90deg, rgba(255,255,255,0) 0 5px, #fff 5px 8px); }
+.legend .min { position: absolute; top: 4px; right: 6px; border: 0; background: none; color: #56616d; font-size: 12px; padding: 0 4px; }
+.tip { position: absolute; pointer-events: none; z-index: 5; max-width: 290px; font-size: 12.5px; line-height: 1.4; background: #ffffff; color: #1d2733; border: 1px solid rgba(30, 40, 50, 0.2); border-radius: 5px; padding: 7px 9px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+.tip b { display: block; font-size: 13px; margin-bottom: 2px; }
+.tip .m { color: #4b5866; font-family: var(--font-data); font-size: 11.5px; }
+.panel { min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.tabs { display: flex; border-bottom: 1px solid var(--line); flex: none; }
+.tabs button { flex: 1; border: 0; border-radius: 0; background: transparent; padding: 9px 6px; font-weight: 600; font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tabpane { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.panel h2 { margin: 0 0 6px; font-size: 11.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.kpi { border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; min-width: 0; }
+.kpi span { display: block; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi b { font-family: var(--font-data); font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.kpi small { font-family: var(--font-data); font-size: 11px; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { text-align: left; font-weight: 500; color: var(--muted); font-size: 11px; padding: 0 4px 4px; border-bottom: 1px solid var(--line); vertical-align: bottom; }
+td { padding: 5px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.n, th.n { font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.dots { display: flex; gap: 3px; padding-top: 3px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--idle); opacity: .45; }
+.dot.busy { background: var(--good); opacity: 1; }
+.dot.idle { background: transparent; border: 1.5px solid var(--warn); opacity: 1; width: 6px; height: 6px; }
+.ubar { position: relative; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 3px; }
+.ubar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--fg); border-radius: 3px; }
+.ubar i.hi { background: var(--accent); }
+.track { border: 1px solid var(--line); border-radius: 5px; padding: 8px; }
+.track .hd { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.track .hd b { font-family: var(--font-data); font-size: 14px; }
+.track ol { margin: 0; padding: 0; list-style: none; max-height: 190px; overflow: auto; font-size: 12.5px; }
+.track li { display: grid; grid-template-columns: 82px 1fr; gap: 6px; padding: 2px 0; }
+.track li time { font-family: var(--font-data); font-size: 11.5px; color: var(--muted); }
+.track li:last-child { color: var(--accent); font-weight: 600; }
+.log { margin: 0; padding: 0; list-style: none; font-size: 12.5px; }
+.log li { display: grid; grid-template-columns: 82px 1fr; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+.log time { font-family: var(--font-data); font-size: 11.5px; color: var(--muted); }
+.log li.bad span { color: var(--accent); }
+.empty { color: var(--muted); font-size: 12.5px; }
+.eqroom td { background: color-mix(in srgb, var(--fg) 6%, transparent); font-weight: 600; }
+.eqroom td small { font-weight: 400; color: var(--muted); font-family: var(--font-data); }
+.eqrow { cursor: pointer; }
+.eqrow:hover td { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.eqrow td:first-child b { font-weight: 500; }
+.eqrow .fn { display: block; color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+.tot td { font-weight: 600; border-top: 2px solid var(--fg); }
+#tab-equip table { table-layout: fixed; }
+#tab-equip th:nth-child(1) { width: 50%; }
+#tab-equip th:nth-child(2) { width: 9%; }
+#tab-equip th:nth-child(3), #tab-equip th:nth-child(4) { width: 15%; }
+#tab-equip th:nth-child(5) { width: 11%; }
+#tab-equip td { overflow-wrap: anywhere; }
+#tab-equip td.n { white-space: normal; font-size: 11.5px; }
+.summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.flowlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.flowlist li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; font-size: 12.5px; }
+.flowlist .sw { width: 22px; height: 6px; border-radius: 3px; margin-top: 6px; }
+.flowlist b { font-weight: 600; }
+.flowlist span { color: var(--muted); }
+.steps { margin: 0; padding-left: 0; list-style: none; font-size: 12.5px; display: flex; flex-direction: column; gap: 3px; }
+.steps i { font-style: normal; display: inline-grid; place-items: center; min-width: 22px; height: 17px; border-radius: 9px; color: #fff; font-family: var(--font-data); font-size: 10.5px; margin-right: 6px; }
+.note { font-size: 12px; color: var(--muted); margin: 0; }
+@media (max-width: 960px) {
+  html, body { height: auto; }
+  .app { height: auto; }
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .viewport { height: 72vh; min-height: 380px; }
+  .tabpane { overflow: visible; }
+}
+@media (max-width: 480px) {
+  .kpis, .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .legend { font-size: 11px; max-height: 38%; }
+}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <h1>Acoustic Guitar Plant Simulator</h1>
+      <span>Discrete-event model on a 3D site plan · 40 guitars/day · takt 11.25 min · latitude 8.6° N</span>
+    </div>
+    <div class="clock"><b id="clk">D1 07:50</b><span class="chip" id="shift">Off shift</span></div>
+    <div class="controls">
+      <button id="play" class="on" aria-pressed="true">Pause</button>
+      <div class="seg" id="speeds" role="group" aria-label="Simulation speed in sim-minutes per second"></div>
+      <label class="tog"><input type="checkbox" id="skip" checked> Fast nights</label>
+      <select id="restart" aria-label="Restart simulation">
+        <option value="">Restart…</option>
+        <option value="steady">Restart at steady state</option>
+        <option value="empty">Restart with an empty plant</option>
+      </select>
+    </div>
+    <div class="timeline">
+      <div class="tl" id="tl"></div>
+      <div class="tl-scale"><span>06:00</span><span>09:00</span><span>12:00</span><span>15:00</span><span>18:00</span></div>
+    </div>
+  </header>
+
+  <div class="main">
+    <section class="viewport" id="vp" aria-label="3D plant view">
+      <div id="labels"></div>
+      <div class="vp-tools">
+        <button data-view="connection" class="on">CONNECTION</button>
+        <button data-view="iso">SITE ISO</button>
+        <button data-view="power">POWER YARD</button>
+        <button data-view="plan">TOP PLAN</button>
+        <button id="lblBtn" class="on">LABELS</button>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="vp-note" id="vpnote">Section cut at 1.8 m · drag to orbit · scroll to zoom</div>
+      <div class="tip" id="tip" hidden></div>
+    </section>
+
+    <aside class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="live">Live</button>
+        <button role="tab" aria-selected="false" data-tab="equip">Equipment &amp; area</button>
+        <button role="tab" aria-selected="false" data-tab="flows">Flows</button>
+      </div>
+
+      <div class="tabpane" id="tab-live">
+        <div>
+          <h2>Plant performance <small style="text-transform:none;letter-spacing:0;font-weight:400">since this run started</small></h2>
+          <div class="kpis">
+            <div class="kpi"><span>Shipped</span><b id="kShip">0</b> <small>guitars</small></div>
+            <div class="kpi"><span>Output per truck</span><b id="kTp">–</b> <small>/day</small></div>
+            <div class="kpi"><span>Mean lead time</span><b id="kLt">–</b> <small>days</small></div>
+            <div class="kpi"><span>Work in process</span><b id="kWip">0</b> <small>guitars</small></div>
+            <div class="kpi"><span>In finish cure</span><b id="kCure">0</b> <small>parts</small></div>
+            <div class="kpi"><span>First-pass yield</span><b id="kFpy">–</b> <small>%</small></div>
+          </div>
+        </div>
+        <div>
+          <h2>Stations</h2>
+          <table>
+            <thead><tr><th>Department</th><th>Status</th><th class="n">Queue</th><th class="n">Utilisation</th></tr></thead>
+            <tbody id="stRows"></tbody>
+          </table>
+        </div>
+        <div class="track">
+          <div class="hd"><b id="trkId">No guitar tracked</b><span class="controls"><button id="trkNew">Track newest kit</button><button id="trkFollow" aria-pressed="false">Follow</button></span></div>
+          <ol id="trkHist"></ol>
+        </div>
+        <div>
+          <h2>Plant events</h2>
+          <ul class="log" id="log"></ul>
+        </div>
+      </div>
+
+      <div class="tabpane" id="tab-equip" hidden>
+        <div class="summary" id="eqSummary"></div>
+        <p class="note">Click a row to fly the camera to that equipment. Footprint is the floor area each unit occupies. Room floor areas are measured from the plan, inside the building outline.</p>
+        <table>
+          <thead><tr><th>Equipment and function</th><th class="n">Qty</th><th class="n">m² each</th><th class="n">m² total</th><th class="n">kW</th></tr></thead>
+          <tbody id="eqRows"></tbody>
+        </table>
+      </div>
+
+      <div class="tabpane" id="tab-flows" hidden>
+        <div>
+          <h2>Process route</h2>
+          <ol class="steps" id="stepList"></ol>
+        </div>
+        <div>
+          <h2>Flow indicators</h2>
+          <ul class="flowlist" id="flowList"></ul>
+        </div>
+        <p class="note">Process flows are coloured bands with moving dashes and arrowheads; utility connections are round pipes in the plant's pipeline-legend colours. Dashes and arrows point in the direction of flow. Switch any flow on or off from the legend in the 3D view.</p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s);
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/*DATA-START*/
+/* ---------- Plan geometry (metres; x east, y north) ---------- */
+function outlinePts() {
+  const R = 23, X = 79.5, pts = [[R, 0], [X - 19, 0]];
+  const q = (p0, c, p1, n = 24) => { for (let i = 1; i <= n; i++) { const t = i / n; pts.push([(1 - t) ** 2 * p0[0] + 2 * t * (1 - t) * c[0] + t * t * p1[0], (1 - t) ** 2 * p0[1] + 2 * t * (1 - t) * c[1] + t * t * p1[1]]); } };
+  q([X - 19, 0], [X, 0], [X, 22]); q([X, 22], [X, 42], [X - 17, 44]); q([X - 17, 44], [X - 26, 44], [X - 33, 40.5]); q([X - 33, 40.5], [X - 38, 46], [X - 48, 46]);
+  pts.push([R, 46]);
+  for (let i = 1; i < 48; i++) { const a = Math.PI / 2 + Math.PI * i / 48; pts.push([R + R * Math.cos(a), R + R * Math.sin(a)]); }
+  return pts;
+}
+const OUTLINE = outlinePts();
+function polyArea(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s) / 2; }
+function clipRect(subj, x0, y0, x1, y1) {
+  const cl = (poly, inside, inter) => { const out = []; for (let i = 0; i < poly.length; i++) { const a = poly[(i + poly.length - 1) % poly.length], b = poly[i]; if (inside(b)) { if (!inside(a)) out.push(inter(a, b)); out.push(b); } else if (inside(a)) out.push(inter(a, b)); } return out; };
+  const ix = x => (a, b) => [x, a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0])];
+  const iy = y => (a, b) => [a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]), y];
+  let p = subj;
+  for (const [ins, it] of [[q => q[0] >= x0, ix(x0)], [q => q[0] <= x1, ix(x1)], [q => q[1] >= y0, iy(y0)], [q => q[1] <= y1, iy(y1)]]) { p = cl(p, ins, it); if (!p.length) return []; }
+  return p;
+}
+function inPoly(p, poly) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; }
+
+const ROOMS = [
+  { k: "RM", n: "Raw Materials Storage", r: [0, 32, 21, 46] },
+  { k: "WP", n: "Wood Processing", r: [21, 32, 40, 46] },
+  { k: "CP", n: "Component Preparation", r: [48, 32, 79.5, 46] },
+  { k: "BA", n: "Body Assembly", r: [0, 20.5, 36, 32] },
+  { k: "NA", n: "Neck Assembly", r: [39, 20.5, 70, 32] },
+  { k: "ER", n: "Electrical Room", r: [70, 20.5, 79.5, 32], s: 1 },
+  { k: "SS", n: "Shaping & Sanding", r: [0, 9, 16, 18] },
+  { k: "FIN", n: "Finishing", r: [16, 9, 35, 18] },
+  { k: "HW", n: "Hardware Installation", r: [35, 9, 50, 18] },
+  { k: "QI", n: "Quality Inspection", r: [50, 9, 63, 18] },
+  { k: "PK", n: "Packaging", r: [63, 7, 79.5, 18] },
+  { k: "CN", n: "Canteen w/ Rest Room", r: [0, 0, 22, 7], s: 1 },
+  { k: "SF", n: "Safety Station", r: [22, 0, 30, 7], s: 1 },
+  { k: "LB", n: "Lobby / Lounge", r: [30, 0, 41, 7], s: 1 },
+  { k: "EM", n: "Equipment Maintenance", r: [41, 0, 52, 7], s: 1 },
+  { k: "OF", n: "Office", r: [52, 0, 63, 7], s: 1 },
+  { k: "HALL", n: "Packaging–Shipping Hallway", r: [79.3, 17, 120.5, 21], ext: 1 },
+  { k: "SH", n: "Shipping Area", r: [120.5, 12, 135.5, 26.67], ext: 1 },
+];
+const DOORS = [[10.5, 32], [30, 32], [55, 32], [44, 32], [18, 20.5], [36, 26], [39, 26], [55, 20.5], [75, 20.5], [8, 18], [26, 18], [42, 18], [56, 18], [71, 18], [76, 18],
+  [8, 9], [26, 9], [42, 9], [56, 9], [70, 7], [15, 7], [26, 7], [35.5, 7], [46, 7], [57, 7]];
+const OUTER_OPENINGS = [[35.5, 0], [18, 45.4], [66, 0.1], [3.2, 13]];
+
+// Equipment catalogue: [room, name, qty, function, kW total, footprint W (east-west), D (north-south), height, model, placements [x, y, rotation]]
+const EQ = [
+  ["RM", "Cantilever lumber racks, 4-tier", 8, "Store sticker-stacked tonewood during the 14-day acclimation at 45% RH", 0, 2.4, 1.5, 2.6, "lumberRack", [[9.6, 39.8], [12.1, 39.8], [14.6, 39.8], [17.1, 39.8], [19.6, 39.8], [14.9, 43.2], [17.3, 43.2], [19.7, 43.2]]],
+  ["RM", "Kitting bench with moisture meters", 1, "Moisture-check each board to 6–8% MC and assemble a serial-tagged kit", 0, 2.0, 1.0, 0.9, "bench", [[17, 35]]],
+  ["RM", "Industrial humidifier/dehumidifier", 2, "Hold the room at 45 ± 5% RH day and night", 6, 1.2, 0.8, 1.6, "cabinet", [[6, 36.5], [20.3, 37.2]]],
+  ["RM", "Electric forklift 2.5 t", 2, "Unload lumber trucks and move bundles to the racks", 0, 3.2, 1.2, 2.2, "forklift", [[10, 37.2], [13.8, 37.2]]],
+  ["RM", "Forklift battery chargers", 2, "Charge forklift batteries overnight", 10, 0.6, 0.4, 1.2, "cabinet", [[16.4, 37.9], [17.2, 37.9]]],
+  ["RM", "Kitting carts with serial tags", 60, "Carry one guitar's matched wood set through every room (4 shown parked)", 0, 0.7, 1.4, 1.0, "cart", [[3.6, 33.2], [4.5, 33.2], [5.4, 33.2], [6.3, 33.2]]],
+  ["WP", "Infeed/outfeed roller tables (line stations)", 2, "Feed plates and blanks through the two processing lines", 0, 2.0, 0.9, 0.85, "rollerTable", [[25, 35.5], [32, 35.5]]],
+  ["WP", "18-inch band resaw", 1, "Split billets into bookmatched top and back plates", 7.5, 1.2, 2.0, 2.2, "resaw", [[22.6, 39.5]]],
+  ["WP", "Sliding panel saw", 1, "Cross-cut and rip blanks to size", 5.5, 3.2, 3.0, 1.1, "panelSaw", [[26.3, 43.6]]],
+  ["WP", "Jointer, 300 mm", 1, "Flatten and square plate edges for joining", 3.7, 2.4, 0.6, 0.9, "jointer", [[26, 39.2]]],
+  ["WP", "Thickness planer", 1, "Plane neck blanks and side sets", 7.5, 1.2, 1.0, 1.2, "planer", [[29.6, 39.2]]],
+  ["WP", "Wide-belt drum sander", 1, "Thickness tops to 2.8 mm and backs/sides to 2.2 mm ± 0.05 mm", 15, 1.6, 1.4, 1.9, "drum", [[33.2, 39.4]]],
+  ["WP", "Plate-joining clamp racks", 4, "Glue bookmatched halves (60 min cure)", 0, 0.6, 1.2, 1.4, "clampRack", [[36, 38.6], [37, 38.6], [38, 38.6], [39, 38.6]]],
+  ["CP", "5-axis CNC router with vacuum table", 1, "Carve necks, heels and headstocks; cut sound holes and body outlines", 15, 3.6, 2.6, 2.6, "cnc", [[52, 36]]],
+  ["CP", "3-axis CNC router", 1, "Slot fretboards, route rosette channels and bridge blanks", 9, 3.0, 2.2, 2.2, "cnc", [[58, 36]]],
+  ["CP", "Go-bar decks with radius dishes", 3, "Glue braces to tops and backs under even pressure", 0, 1.4, 1.4, 1.6, "gobar", [[63, 36], [64.6, 36], [66.2, 36]]],
+  ["CP", "Heat-blanket side benders", 2, "Bend sides to body shape at about 150 °C", 3, 1.2, 0.8, 1.0, "bender", [[69.5, 35.4], [69.5, 36.6]]],
+  ["CP", "Laser engraver", 1, "Cut rosette and inlay pieces", 1.5, 1.4, 1.0, 1.1, "laser", [[55, 40.5]]],
+  ["CP", "Bandsaw, 14-inch", 1, "Cut braces, kerfing and small parts", 2.2, 0.8, 0.8, 1.8, "bandsaw", [[59, 40.5]]],
+  ["CP", "Oscillating spindle sander", 1, "Shape braces and small parts", 1.5, 0.6, 0.6, 1.0, "spindle", [[60.6, 40.5]]],
+  ["BA", "Workbenches with spool clamps", 4, "Fit kerfing, the braced top and back to the rims", 0, 2.0, 1.0, 0.9, "bench", [[6, 26.5], [10.5, 26.5], [15, 26.5], [19.5, 26.5]]],
+  ["BA", "Body molds (dreadnought/OM)", 26, "Hold the sides in shape while the box is closed and cured (24 in use, 2 spare)", 0, 0.6, 0.9, 0.15, "none", []],
+  ["BA", "Binding-channel router jigs", 2, "Route binding and purfling channels", 2.2, 1.2, 1.0, 1.1, "routerJig", [[5, 30.4], [7.6, 30.4]]],
+  ["BA", "Glue station with glue pots", 1, "Apply aliphatic and hide glue", 0.5, 1.2, 0.6, 0.9, "bench", [[11, 30.6]]],
+  ["BA", "Radius dish and caul rack", 1, "Store radius dishes, cauls and the 2 spare molds", 0, 1.6, 0.6, 1.8, "shelf", [[14.5, 30.9]]],
+  ["NA", "Neck benches with truss-rod jigs", 4, "Install truss rods and glue fretboards", 0, 2.0, 0.9, 0.9, "bench", [[42, 26], [46, 26], [50, 26], [54, 26]]],
+  ["NA", "Arbor fret presses with radius cauls", 2, "Press frets into the fretboard slots", 0, 0.6, 0.6, 1.2, "press", [[58, 28.4], [59.2, 28.4]]],
+  ["NA", "Fretboard clamping caul rack", 1, "Hold 12 cauls for the 60 min fretboard cure", 0, 1.6, 0.6, 1.4, "shelf", [[61.6, 28.4]]],
+  ["NA", "Spindle sanders", 2, "Carve the neck profile", 3, 0.6, 0.6, 1.0, "spindle", [[64, 28.4], [65.2, 28.4]]],
+  ["NA", "Heel belt sander", 1, "Fit and shape the neck heel", 2.2, 0.9, 0.6, 1.1, "beltSander", [[67, 28.4]]],
+  ["ER", "Main distribution board (MDB), 800 A ACB", 1, "Distribute 400 V power from the transformer to every sub-board", 0, 3.0, 0.8, 2.2, "switchgear", [[74, 31.2]]],
+  ["ER", "Power-factor correction capacitor bank", 1, "Hold the power factor at 0.95 or better", 0, 1.0, 0.6, 2.0, "switchgear", [[77, 29.6]]],
+  ["ER", "Sub-distribution boards", 4, "Feed machines, lighting and HVAC zone by zone", 0, 0.8, 0.3, 1.8, "panel", [[70.5, 23.5, 90], [70.5, 24.7, 90], [70.5, 25.9, 90], [70.5, 27.1, 90]]],
+  ["ER", "UPS and IT/server rack", 1, "Keep controls, CCTV and IT running through outages", 2, 1.4, 0.8, 2.0, "switchgear", [[76.5, 23.5]]],
+  ["SS", "Downdraft sanding tables", 3, "Capture dust at source while sanding to 220 grit", 4.5, 1.8, 1.0, 0.9, "downdraft", [[7, 15.5], [10.5, 15.5], [14, 15.5]]],
+  ["SS", "Edge belt sander", 1, "Shape bindings, heels and contours", 3, 2.4, 0.8, 1.0, "beltSander", [[4.2, 14.6]]],
+  ["SS", "Oscillating spindle sander", 1, "Blend heels and contours", 1, 0.6, 0.6, 1.0, "spindle", [[3.2, 16.6]]],
+  ["SS", "Air-tool rack with 8 random-orbital sanders", 1, "Hold the pneumatic sanders used on every table", 0, 1.0, 0.4, 1.4, "shelf", [[8.6, 17.6]]],
+  ["FIN", "Pressurised spray booths, 2.4 × 2.1 m opening", 2, "Spray sealer, colour and topcoats with filtered make-up air", 15, 3.0, 3.0, 2.7, "booth", [[18.3, 15.8], [21.8, 15.8]]],
+  ["FIN", "HVLP spray guns with pressure pots", 6, "Apply finish at 65%+ transfer efficiency (3 pots shown)", 0, 0.4, 0.4, 0.7, "pot", [[23.7, 15.0], [23.7, 15.9], [23.7, 16.8]]],
+  ["FIN", "UV curing tunnel", 1, "Pre-cure UV-hybrid coats before rack curing", 12, 4.0, 1.2, 1.5, "tunnel", [[21.5, 12.8]]],
+  ["FIN", "Cure-room rack system, 6 tiers, 200 positions", 1, "Hold bodies and necks for the 48 h cure", 0, 6.0, 7.8, 2.2, "cureRack", [[27, 13.5]]],
+  ["FIN", "Paint mixing room with exhaust", 1, "Mix and decant finish under ventilation", 1.5, 2.0, 2.0, 2.4, "roomBox", [[17.6, 10.4]]],
+  ["FIN", "Flammable-liquids safety cabinet", 1, "Store solvents and finish stock", 0, 1.2, 0.5, 1.7, "flamCab", [[17.6, 12.4]]],
+  ["FIN", "Twin-wheel buffing machines", 2, "Level-sand and buff the cured finish to gloss", 4.4, 1.2, 0.8, 1.3, "buffer", [[32.5, 16.3], [32.5, 13.6]]],
+  ["HW", "Setup benches with neck rests", 4, "Join neck to body; fit bridge, tuners, nut, saddle and strings; set up", 0, 2.0, 1.0, 0.9, "bench", [[37, 16.3], [40.3, 16.3], [43.6, 16.3], [46.9, 16.3]]],
+  ["HW", "String-settle rack, 48 positions", 1, "Hold strung guitars overnight while neck relief settles", 0, 14.0, 2.5, 1.0, "lowRack", [[42.5, 13.55]]],
+  ["HW", "Matched-set rack", 1, "Keep each finished neck with its body until assembly", 0, 8.5, 2.1, 1.0, "lowRack", [[45.25, 10.55]]],
+  ["HW", "Bench drill press", 1, "Drill tuner and bridge-pin holes", 0.75, 0.6, 0.5, 1.6, "drill", [[49.4, 17.4]]],
+  ["HW", "Nut and saddle belt sander", 1, "Shape bone and Tusq nuts and saddles", 0.75, 0.5, 0.4, 0.9, "spindle", [[48.6, 17.6]]],
+  ["HW", "Hardware parts cabinets", 2, "Store tuners, strings, pins, bridge clamps and strobe tuners", 0, 1.0, 0.5, 1.8, "cabinet", [[38.6, 17.6], [42, 17.6]]],
+  ["QI", "Inspection benches, 1,000 lux", 2, "Check finish, joints, fret ends and setup", 0, 2.0, 1.0, 0.9, "bench", [[52, 16.3], [55.5, 16.3]]],
+  ["QI", "Sound-isolated play-test booth", 1, "Tone, buzz and preamp test", 0.5, 2.4, 2.4, 2.4, "roomBox", [[60.5, 15.8]]],
+  ["QI", "Humidity test cabinet", 1, "Sample stability test at 35% and 65% RH", 2, 1.0, 0.8, 1.9, "cabinet", [[58, 17.3]]],
+  ["PK", "Case/carton bench with label printer", 1, "Fit humidity pack, case or carton; print the serial label", 0, 2.4, 1.2, 0.9, "bench", [[67, 15.8]]],
+  ["PK", "Poly bagger", 1, "Dust-protect each guitar", 1.5, 1.0, 0.8, 1.2, "machine", [[64.5, 15.8]]],
+  ["PK", "Case and carton stock racks", 2, "Hold one day of cases, cartons and humidity packs", 0, 2.4, 1.0, 2.0, "shelf", [[65.7, 8.1], [68.4, 8.1]]],
+  ["HALL", "Powered roller conveyor, 55 m with 2 curves", 1, "Carry packed cartons from Packaging to Shipping at 0.4 m/s (2.3 min)", 1.5, 55.3, 0.8, 0.9, "none", []],
+  ["SH", "Conveyor accumulation table", 1, "Collect cartons at the end of the conveyor", 0, 2.0, 1.0, 0.85, "rollerTable", [[122.5, 19]]],
+  ["SH", "Stretch wrapper", 1, "Wrap palletised cartons", 1.5, 2.6, 1.8, 2.4, "wrapper", [[124, 15]]],
+  ["SH", "Hydraulic dock leveller", 1, "Bridge the dock to the truck bed", 0.75, 2.0, 2.5, 0.3, "leveler", [[128, 13.4]]],
+  ["SH", "Selective pallet racking", 2, "Stage finished-goods pallets", 0, 1.1, 2.7, 3.0, "palletRack", [[133.6, 14.4], [133.6, 17.3]]],
+  ["SH", "Pallet jacks", 2, "Move pallets to the truck", 0, 0.7, 1.6, 1.2, "jack", [[125.9, 17.4], [126.8, 17.4]]],
+  ["CN", "Dining tables, 6 seats", 6, "Seat 36 staff per lunch sitting", 0, 1.8, 0.8, 0.75, "dining", [[11.6, 4.2], [14, 4.2], [16.4, 4.2], [15.2, 2.5], [17.6, 2.5], [8.9, 6.0]]],
+  ["CN", "Kitchen counter and equipment", 1, "Prepare meals for 74 staff in two sittings", 15, 4.0, 0.8, 0.95, "counter", [[13, 6.4]]],
+  ["CN", "Restroom block (WC, urinals, lavatories)", 1, "Toilets and hand-washing for production staff", 0, 3.0, 2.5, 2.4, "roomBox", [[20.3, 5.4]]],
+  ["CN", "Drinking water dispensers", 2, "Chilled drinking water", 0.6, 0.4, 0.4, 1.2, "cabinet", [[17.6, 6.6], [18.2, 6.6]]],
+  ["SF", "First-aid bed and AED cabinet", 1, "Treat injuries; hold the defibrillator", 0, 2.0, 0.9, 0.9, "bed", [[25, 5.8]]],
+  ["SF", "Emergency shower and eyewash", 1, "Flush chemical or dust exposure", 0, 1.0, 1.0, 2.3, "shower", [[28.8, 5.8]]],
+  ["SF", "PPE cabinets", 3, "Issue respirators, hearing and eye protection", 0, 1.0, 0.5, 1.8, "cabinet", [[23, 1], [24.2, 1], [25.4, 1]]],
+  ["SF", "Fire alarm control panel", 1, "Monitor detectors and sprinkler flow switches", 0.2, 0.6, 0.2, 0.9, "panel", [[28.6, 0.4]]],
+  ["SF", "Spill kit and stretcher cabinet", 1, "Contain spills and move casualties", 0, 0.8, 0.6, 1.0, "cabinet", [[27.3, 1.2]]],
+  ["LB", "Reception desk", 1, "Visitor sign-in and admin entry", 0, 2.4, 0.8, 1.1, "counter", [[35.5, 5.2]]],
+  ["LB", "Lounge sofas", 2, "Visitor and break seating", 0, 2.0, 0.9, 0.8, "sofa", [[32.5, 2.2], [35.5, 2.2]]],
+  ["LB", "Guitar showroom display wall", 1, "Show finished models to visitors", 0, 3.0, 0.4, 2.2, "display", [[39, 6.6]]],
+  ["EM", "Saw blade and router bit sharpener", 1, "Keep blades and bits cutting cleanly", 1.5, 1.2, 0.8, 1.3, "machine", [[43, 5.8]]],
+  ["EM", "Tool grinder", 1, "Regrind planer knives and chisels", 0.75, 0.6, 0.5, 1.2, "spindle", [[45, 6]]],
+  ["EM", "Welding unit", 1, "Repair jigs, fixtures and racks", 5, 0.8, 0.6, 1.0, "machine", [[46.5, 6]]],
+  ["EM", "Maintenance workbenches", 2, "Repair machines and build fixtures", 0, 2.0, 0.8, 0.9, "bench", [[44, 2.5], [47.5, 2.5]]],
+  ["EM", "Spare-parts racks", 3, "Hold belts, bearings, blades and filters", 0, 2.0, 0.6, 2.0, "shelf", [[50.8, 2.5, 90], [50.8, 5.0, 90], [48.8, 6.4]]],
+  ["OF", "Office desks with workstations", 8, "Planning, purchasing, HR and engineering", 1.6, 1.4, 0.7, 0.75, "desk", [[53.8, 1.6], [55.6, 1.6], [57.4, 1.6], [59.2, 1.6], [53.8, 3.4], [55.6, 3.4], [57.4, 3.4], [59.2, 3.4]]],
+  ["OF", "Meeting table", 1, "Production meetings and customer reviews", 0, 2.4, 1.2, 0.75, "dining", [[57, 5.8]]],
+  ["OF", "Filing cabinets and plotter", 1, "Drawings, records and quality files", 0.3, 1.8, 0.5, 1.4, "cabinet", [[61.5, 6.5]]],
+  ["YARD", "Dust collector baghouse, 158 m² cloth, 30 kW fan", 1, "Filter 19,000 m³/h of dusty air from 13 woodworking stations", 30, 3.4, 3.4, 7.5, "baghouse", [[30, 49.6]]],
+  ["YARD", "Chip and dust skip", 1, "Collect about 240 kg/day of chips and dust", 0, 3.0, 1.8, 1.4, "skip", [[34, 49.6]]],
+  ["YARD", "Water tank, 40 m³ (2 days)", 1, "Store potable and process water", 0, 4.8, 4.8, 4.5, "vtankBig", [[39, 50.2]]],
+  ["YARD", "Booster pump set", 1, "Pressurise the potable water main", 2.2, 1.2, 0.8, 1.0, "pump", [[42.4, 47.6]]],
+  ["YARD", "Rotary screw compressors, 22 kW VSD (duty + standby)", 2, "Supply 3.75 m³/min of compressed air at 7 bar", 22, 1.6, 1.0, 1.6, "compressor", [[44.8, 47.6], [44.8, 49.6]]],
+  ["YARD", "Refrigerated air dryer", 1, "Dry compressed air to a +3 °C dew point", 1.5, 0.8, 0.6, 1.0, "machine", [[46.6, 47.2]]],
+  ["YARD", "Air receiver, 1,000 L", 1, "Buffer compressor load/unload swings", 0, 0.9, 0.9, 2.2, "vtank", [[46.6, 49.8]]],
+  ["YARD", "Rotary claw vacuum pump 7.5 kW + 500 L receiver", 1, "Hold CNC tables and clamps at −80 kPa", 7.5, 1.4, 0.9, 1.2, "compressor", [[48.4, 48.6]]],
+  ["YARD", "Fire pumps: 45 kW electric, diesel standby, 1.5 kW jockey", 3, "Deliver 2,100 L/min at 7 bar to sprinklers and hydrants", 46.5, 1.4, 0.8, 1.0, "pump", [[51.6, 47.2], [53.4, 47.2], [52.5, 48.4]]],
+  ["YARD", "Fire water reserve tank, 190 m³", 1, "Hold 90 min of fire-fighting water", 0, 7.0, 7.0, 5.2, "vtankBig", [[59, 49.3]]],
+  ["YARD", "Water-cooled chillers, 80 TR", 2, "Produce chilled water for the air handling units (2 × 281 kW)", 104, 3.2, 1.2, 1.8, "chiller", [[66, 47.2], [66, 49]]],
+  ["YARD", "Chilled and condenser water pumps", 4, "Circulate 81 m³/h chilled and 102 m³/h condenser water", 15, 0.8, 0.5, 0.8, "pump", [[68.6, 46.6], [68.6, 47.4], [68.6, 48.2], [68.6, 49.0]]],
+  ["YARD", "Cooling tower cells", 2, "Reject 650 kW of condenser heat", 7.4, 3.0, 3.0, 3.6, "tower", [[72, 49], [75.2, 49]]],
+  ["YARD", "Air handling units with chilled-water coils", 6, "Cool and dehumidify production rooms to 21 °C and 45% RH", 24, 2.4, 1.2, 1.8, "ahu", [[83.5, 41.5], [86.3, 41.5], [89.1, 41.5], [91.9, 41.5], [94.7, 41.5], [97.5, 41.5]]],
+  ["YARD", "Septic tank and sump with pump, 15 m³", 1, "Treat 9.5 m³/day of sanitary wastewater", 1.5, 4.0, 2.0, 0.3, "septic", [[144, 24]]],
+  ["POWER", "MV pole with fused cutouts and surge arresters", 1, "Take the 13.8 kV utility supply into the yard", 0, 0.6, 0.6, 10, "pole", [[95.5, 36.5]]],
+  ["POWER", "Pad-mounted transformer 500 kVA, 13.8 kV/400 V", 1, "Step utility voltage down to 400 V for the MDB", 0, 2.0, 1.6, 2.0, "transformer", [[88, 34]]],
+  ["POWER", "Standby diesel genset 250 kVA, acoustic enclosure", 1, "Back up humidity control, fire alarm, lighting and IT", 0, 4.0, 1.4, 2.0, "genset", [[90.5, 29.5]]],
+  ["POWER", "Genset day tank, 1,000 L", 1, "Hold 24 h of diesel at half load", 0, 1.6, 0.8, 1.2, "dayTank", [[94.5, 29.5]]],
+  ["POWER", "Automatic transfer switch (ATS) panel", 1, "Move critical loads to the genset within 10 s", 0, 1.0, 0.6, 2.0, "switchgear", [[85, 29.5]]],
+  ["POWER", "Utility metering kiosk", 1, "Revenue metering of the MV supply", 0, 0.8, 0.5, 1.6, "panel", [[92.5, 36.6]]],
+  ["POWER", "Earthing pits with test links", 4, "Earth the transformer neutral, genset and fence", 0, 0.5, 0.5, 0.1, "earthPit", [[83.6, 26.6], [96.4, 26.6], [83.6, 36.9], [86.5, 36.9]]],
+  ["SITE", "Fire hydrants", 3, "External fire-fighting water for the fire brigade", 0, 0.4, 0.4, 0.9, "hydrant", [[-9.5, 23], [64, 52.6], [81, -0.5]]],
+  ["SITE", "LED street lights, 150 W", 8, "Light the one-way road and gates at night", 1.2, 0.4, 0.4, 8, "streetLight", [[-2, -7.4], [18, -7.4], [38, -7.4], [58, -7.4], [78, -7.4], [98, -7.4], [118, -7.4], [138, -7.4]]],
+  ["SITE", "Boom barriers at the gates", 2, "Control entry and exit at the Guard House", 0.5, 0.4, 0.4, 1.1, "boom", [[44.6, -7.6], [33.4, -7.6]]],
+];
+const ROOM_GROUPS = { YARD: "Utility yard (north)", POWER: "Power yard (fenced, 14.0 × 11.5 m)", SITE: "Site" };
+
+// Simulation stations, queue areas and holding zones (where parts sit)
+const ST = {
+  kit: { pos: [[17, 35]], q: [8, 32.6, 15.4, 34.6], h: 0.95 },
+  wp: { pos: [[25, 35.5], [32, 35.5]], q: [21.6, 32.5, 34.4, 34.4], h: 0.95 },
+  cp: { pos: [[52, 36], [58, 36], [64.6, 36]], q: [48.6, 32.5, 62, 34.2], h: 1.05 },
+  ba: { pos: [[6, 26.5], [10.5, 26.5], [15, 26.5], [19.5, 26.5]], q: [3, 21, 22, 23.4], h: 0.95 },
+  na: { pos: [[42, 26], [46, 26], [50, 26], [54, 26]], q: [39.6, 21, 55, 23.2], h: 0.95 },
+  sb: { pos: [[7, 15.5], [10.5, 15.5]], q: [5.5, 9.5, 10.5, 13.2], h: 0.95 },
+  sn: { pos: [[14, 15.5]], q: [11, 9.5, 15.5, 13.2], h: 0.95 },
+  sp: { pos: [[18.3, 15.8], [21.8, 15.8]], q: [19.6, 9.5, 23.4, 11.6], h: 0.95 },
+  bf: { pos: [[32.5, 16.3], [32.5, 13.6]], q: [30.8, 9.5, 34.4, 11.8], h: 1.35 },
+  hw: { pos: [[37, 16.3], [40.3, 16.3], [43.6, 16.3], [46.9, 16.3]], q: [35.5, 9.5, 40.5, 11.6], sz: 2.0, h: 0.95 },
+  qc: { pos: [[52, 16.3], [55.5, 16.3]], q: [50.5, 9.5, 62.5, 13.6], sz: 2.0, h: 0.95 },
+  pk: { pos: [[67, 15.8]], q: [63.5, 9.6, 71, 13.8], sz: 2.0, h: 0.95 },
+};
+const ZONES = {
+  wpglue: { r: [34.6, 32.5, 39.6, 36.6] }, mold: { r: [24, 21, 35.4, 29] }, clamp: { r: [57, 21, 69.4, 25.4], sx: 0.6 },
+  cure: { r: [24, 9.6, 30, 17.4] }, matched: { r: [41, 9.5, 49.5, 11.6], sx: 0.6, base: 0.75 },
+  settle: { r: [35.5, 12.3, 49.5, 14.8], sz: 2.0, base: 0.75 }, stage: { r: [124, 19.5, 134.8, 26], sx: 0.8 },
+};
+const CONVEYOR = [[68.4, 15.8], [76, 15.8], [76, 19], [120.5, 19]];
+/*DATA-END*/
+
+/* ================= Discrete-event model ================= */
+const DAY = 1440, WIN = [[480, 600], [615, 720], [780, 900], [915, 1020]], AVAIL = 450, RATE = 40, DISPATCH = 990;
+function addWork(t, w) {
+  for (;;) {
+    const d = Math.floor(t / DAY); let r = t - d * DAY;
+    for (const [a, b] of WIN) { if (r < b) { const s = Math.max(r, a); if (s + w <= b) return d * DAY + s + w; w -= b - s; r = b; } }
+    t = (d + 1) * DAY;
+  }
+}
+const tod = t => ((t % DAY) + DAY) % DAY;
+const inShift = t => { const r = tod(t); return WIN.some(([a, b]) => r >= a && r < b); };
+function workBetween(t0, t1) { let w = 0; for (let d = Math.floor(t0 / DAY); d * DAY < t1; d++) for (const [a, b] of WIN) w += Math.max(0, Math.min(t1, d * DAY + b) - Math.max(t0, d * DAY + a)); return w; }
+let seed = 2026;
+function rnd() { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }
+function tri(a, m, b) { const u = rnd(), c = (m - a) / (b - a); return u < c ? a + Math.sqrt(u * (b - a) * (m - a)) : b - Math.sqrt((1 - u) * (b - a) * (b - m)); }
+class Heap {
+  constructor() { this.a = []; }
+  get size() { return this.a.length; }
+  peek() { return this.a[0]; }
+  push(x) { const a = this.a; a.push(x); let i = a.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (cmp(a[p], a[i]) <= 0) break; [a[p], a[i]] = [a[i], a[p]]; i = p; } }
+  pop() { const a = this.a, top = a[0], last = a.pop(); if (a.length) { a[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < a.length && cmp(a[l], a[m]) < 0) m = l; if (r < a.length && cmp(a[r], a[m]) < 0) m = r; if (m === i) break; [a[m], a[i]] = [a[i], a[m]]; i = m; } } return top; }
+}
+const cmp = (x, y) => x.t - y.t || x.s - y.s;
+const POOL_DEF = [
+  ["kit", "Kitting", "RM", 1], ["wp", "Wood processing", "WP", 2], ["cp", "Component preparation", "CP", 3],
+  ["ba", "Body assembly", "BA", 4], ["na", "Neck assembly", "NA", 4], ["sb", "Sanding · body", "SS", 2], ["sn", "Sanding · neck", "SS", 1],
+  ["sp", "Spray booths", "FIN", 2], ["bf", "Level-sand & buff", "FIN", 2], ["hw", "Hardware installation", "HW", 4],
+  ["qc", "Quality inspection", "QI", 2], ["pk", "Packaging", "PK", 1],
+];
+const BODY = [["p", "wp", [11, 13, 16], "Resaw and thickness top/back plates"], ["d", "wpglue", 60, "Plate glue cure (60 min)"], ["p", "cp", [14, 17, 21], "Bend sides, carve and glue braces"], ["p", "ba", [32, 38, 44], "Close the box in the mold"], ["d", "mold", 180, "Mold cure (3 h)"], ["p", "sb", [15, 18, 22], "Sand body to 220 grit"], ["p", "sp", [10, 12, 15], "Spray sealer and topcoats"], ["d", "cure", 2880, "Finish cure (48 h)"], ["p", "bf", [10, 12, 15], "Level-sand and buff"]];
+const NECK = [["p", "wp", [4, 5, 7], "Plane neck blank"], ["p", "cp", [8, 10, 13], "CNC neck and fretboard"], ["p", "na", [30, 34, 41], "Truss rod, fretboard, frets"], ["d", "clamp", 60, "Fretboard glue cure (60 min)"], ["p", "sn", [7, 9, 12], "Sand neck"], ["p", "sp", [5, 6, 8], "Spray sealer and topcoats"], ["d", "cure", 2880, "Finish cure (48 h)"], ["p", "bf", [4, 5, 7], "Level-sand and buff"]];
+const ZLABEL = { wpglue: "Plate glue cure", mold: "Mold cure", clamp: "Fretboard glue cure", cure: "Finish cure", matched: "Matched-set rack", settle: "String-tension settle", stage: "Waiting for the 16:30 truck", conveyor: "Conveyor to Shipping" };
+const ZROOM = { wpglue: "WP", mold: "BA", clamp: "NA", cure: "FIN", matched: "HW", settle: "HW", stage: "SH", conveyor: "HALL" };
+let S, P;
+function at(t, fn) { S.ev.push({ t, s: ++S.seq, fn }); }
+function log(msg, bad) { S.log.unshift([S.now, msg, !!bad]); if (S.log.length > 40) S.log.pop(); }
+function hist(g, t, text) { g.hist.push([t, text]); }
+const partName = p => p.g.joined ? "Guitar" : p.kind === "b" ? (p.g.split ? "Body" : "Kit") : "Neck";
+function req(pk, part, dur, done, label) { const p = P[pk]; p.q.push({ part, dur, done, label }); part.loc = { k: "q", pool: pk }; kick(p); }
+function kick(p) {
+  for (let k = 0; k < p.n; k++) {
+    const s = p.srv[k];
+    if (s.job || !p.q.length) continue;
+    const j = p.q.shift();
+    s.job = j; s.start = addWork(S.now, 0); s.end = addWork(S.now, j.dur);
+    j.part.loc = { k: "s", pool: p.key, i: k };
+    hist(j.part.g, s.start, `${partName(j.part)}: ${j.label}`);
+    at(s.end, () => { if (S.now >= S.measureStart) p.busy += workBetween(Math.max(s.start, S.measureStart), s.end); s.job = null; j.done(j.part); kick(p); });
+  }
+}
+function slotIn(zone, part) { const z = S.Z[zone]; let i = z.indexOf(null); if (i < 0) { i = z.length; z.push(part); } else z[i] = part; return i; }
+function dwell(part, zone, dur, next, label) {
+  const slot = slotIn(zone, part);
+  part.loc = { k: "d", zone, slot, from: S.now, until: S.now + dur };
+  if (label) hist(part.g, S.now, `${partName(part)}: ${label}`);
+  at(S.now + dur, () => { S.Z[zone][slot] = null; next(part); });
+}
+function hold(part, zone) { part.loc = { k: "d", zone, slot: slotIn(zone, part), from: S.now }; }
+function unhold(part) { S.Z[part.loc.zone][part.loc.slot] = null; }
+function run(part, steps, i, final) {
+  if (i === steps.length) return final(part);
+  const [k, a, b, label] = steps[i];
+  if (k === "d") dwell(part, a, b, p => run(p, steps, i + 1, final), label);
+  else req(a, part, tri(...b), p => { if (a === "sp") p.finished = true; run(p, steps, i + 1, final); }, label);
+}
+function partDone(part) {
+  const g = part.g; part.done = true; hold(part, "matched");
+  hist(g, S.now, `${part.kind === "b" ? "Body" : "Neck"} into the matched-set rack`);
+  if (g.body.done && g.neck.done) { unhold(g.body); unhold(g.neck); g.joined = true; g.neck.loc = { k: "f" }; req("hw", g.body, tri(30, 36, 44), settled, "Join neck to body, fit bridge, tuners, strings"); }
+}
+function settled(p) { dwell(p, "settle", 960, qc, "Overnight string-tension settle (16 h)"); }
+function qc(p) { req("qc", p, tri(10, 12, 16), qcDone, "Final inspection and play test"); }
+function qcDone(p) {
+  const g = p.g;
+  if (S.now >= S.measureStart) S.inspected++;
+  if (!g.rw && rnd() < 0.04) { g.rw = true; if (S.now >= S.measureStart) S.failed++; log(`Guitar ${gid(g)} failed inspection, sent back for rework`, true); req("hw", p, tri(15, 20, 30), qc, "Rework after failed inspection"); }
+  else req("pk", p, tri(6, 8, 10), packed, "Humidity pack, case and label");
+}
+function packed(p) { p.g.carton = true; p.g.packed = S.now; dwell(p, "conveyor", 2.3, staged, "Conveyor through the hallway to Shipping"); }
+function staged(p) { hold(p, "stage"); S.ready.push(p.g); }
+function dispatch() {
+  const n = S.ready.length;
+  S.ready.forEach((g, i) => {
+    unhold(g.body); g.shipped = S.now; g.body.loc = { k: "truck", i };
+    hist(g, S.now, `Loaded on the truck · lead time ${((S.now - g.rel) / DAY).toFixed(2)} days`);
+    if (S.now >= S.measureStart) S.leads.push((S.now - g.rel) / DAY);
+    at(S.now + 16, () => { g.gone = true; S.guitars.delete(g.id); });
+  });
+  if (S.now >= S.measureStart) { S.shipped += n; S.dispatches++; }
+  S.ready = [];
+  log(`Truck dispatched with ${n} guitars`);
+}
+const gid = g => "G-" + String(g.id).padStart(4, "0");
+function release() {
+  const id = ++S.nextId;
+  const g = { id, rel: S.now, hist: [], joined: false, split: false };
+  g.body = { kind: "b", g, loc: null }; g.neck = { kind: "n", g, loc: { k: "hidden" } };
+  S.guitars.set(id, g);
+  hist(g, S.now, "Kit released from acclimated lumber stock");
+  req("kit", g.body, tri(5, 7, 9), () => { g.split = true; run(g.body, BODY, 0, partDone); run(g.neck, NECK, 0, partDone); }, "Kitting and moisture check");
+}
+function dayStart(d) {
+  for (let k = 0; k < RATE; k++) at(addWork(d * DAY + 480, k * AVAIL / RATE), release);
+  at(d * DAY + 455, () => log("Supply van at the Raw Materials Storage door"));
+  at(d * DAY + 480, () => log("Shift starts, 40 kits scheduled for release"));
+  at(d * DAY + 720, () => log("Lunch break"));
+  at(d * DAY + 960, () => log("Truck backed onto the Shipping dock"));
+  at(d * DAY + DISPATCH, dispatch);
+  at(d * DAY + 1020, () => log(`Shift ends, ${S.Z.cure.filter(Boolean).length} parts curing overnight`));
+  at((d + 1) * DAY, () => dayStart(d + 1));
+}
+function init(mode) {
+  seed = 2026;
+  S = { now: 0, ev: new Heap(), seq: 0, nextId: 0, guitars: new Map(), ready: [], log: [], leads: [], shipped: 0, dispatches: 0, inspected: 0, failed: 0, measureStart: Infinity,
+        Z: { wpglue: [], mold: [], clamp: [], cure: [], matched: [], settle: [], stage: [], conveyor: [] } };
+  P = {};
+  POOL_DEF.forEach(([key, name, room, n]) => { P[key] = { key, name, room, n, srv: Array.from({ length: n }, () => ({ job: null, start: 0, end: 0 })), q: [], busy: 0 }; });
+  dayStart(0);
+  advance(mode === "empty" ? 470 : 7 * DAY + 470);
+  S.measureStart = S.now; S.log = [];
+  log(mode === "empty" ? "Empty plant: the first guitars ship on day 4" : "Plant running at steady state from day 8");
+}
+function advance(to) { while (S.ev.size && S.ev.peek().t <= to) { const e = S.ev.pop(); S.now = e.t; e.fn(); } S.now = to; }
+function util(p) {
+  const avail = p.n * workBetween(S.measureStart, S.now); if (avail <= 0) return 0;
+  let b = p.busy; p.srv.forEach(s => { if (s.job) b += workBetween(Math.max(s.start, S.measureStart), Math.min(S.now, s.end)); });
+  return b / avail;
+}
+
+/* ================= Scene ================= */
+const vp = $("#vp"), lblLayer = $("#labels");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+vp.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const persp = new THREE.PerspectiveCamera(45, 1, 0.3, 1500);
+const ortho = new THREE.OrthographicCamera(-100, 100, 60, -60, 1, 1000);
+let camera = persp;
+const ctlP = new THREE.OrbitControls(persp, renderer.domElement);
+ctlP.enableDamping = true; ctlP.maxPolarAngle = Math.PI * 0.49; ctlP.minDistance = 4; ctlP.maxDistance = 420;
+const ctlO = new THREE.OrbitControls(ortho, renderer.domElement);
+ctlO.enableRotate = false; ctlO.screenSpacePanning = true; ctlO.enabled = false; ctlO.minZoom = 0.5; ctlO.maxZoom = 12;
+let controls = ctlP;
+
+// Soft daylight: latitude 8.6° N near solar noon, sun about 75° high, slightly south of the zenith
+scene.add(new THREE.HemisphereLight(0xeaf2fb, 0xb9ad94, 0.62));
+const sun = new THREE.DirectionalLight(0xfff6e8, 0.78);
+sun.position.set(14, 120, 32); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0004;
+Object.assign(sun.shadow.camera, { left: -100, right: 100, top: 60, bottom: -60, near: 10, far: 260 });
+sun.target.position.set(10, 0, -2); scene.add(sun, sun.target);
+
+const W = (x, y, h = 0) => new THREE.Vector3(x - 62, h, 17 - y);
+const std = (c, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.82, metalness: 0.04 }, o));
+const M = {
+  grass: std(0xa9b394, { roughness: 1 }), pave: std(0xcdc9bf, { roughness: 0.95 }), asphalt: std(0x6d7176, { roughness: 0.95 }),
+  floor: std(0xd5d8d6, { roughness: 0.7 }), prod: std(0xcfd6d2, { roughness: 0.6 }), support: std(0xddd6cb, { roughness: 0.8 }), hall: std(0xcdd2d6),
+  wall: std(0xe4e1da), wallEdge: new THREE.LineBasicMaterial({ color: 0x6c6a64, transparent: true, opacity: 0.5 }),
+  steel: std(0x9aa1a6, { metalness: 0.45, roughness: 0.45 }), darkSteel: std(0x5b6266, { metalness: 0.4, roughness: 0.5 }),
+  machine: std(0x6f7c74, { roughness: 0.55, metalness: 0.2 }), machineCream: std(0xd4cdbd, { roughness: 0.6 }), cnc: std(0x7d8a96, { roughness: 0.5, metalness: 0.25 }),
+  wood: std(0xb79e7a), lumber: std(0xc8a774), rubber: std(0x2c2e30), glass: std(0xa9c3d3, { transparent: true, opacity: 0.32, depthWrite: false, roughness: 0.1 }),
+  panelWhite: std(0xe3e6e6), fork: std(0xbfa244), red: std(0xa8443a), flam: std(0xc9a83c), concrete: std(0xbdb9b1),
+  tank: std(0xb7c0c4, { metalness: 0.3, roughness: 0.45 }), blueTank: std(0x8aa3b5, { metalness: 0.2, roughness: 0.5 }), fabric: std(0x7e8790), white: std(0xf0efea),
+  raw: std(0xe6cd9c, { roughness: 0.75 }), fin: std(0xb6702c, { roughness: 0.25, metalness: 0.08 }), neck: std(0x8a5a38), neckFin: std(0x6e4026, { roughness: 0.3 }),
+  hole: std(0x2a1c12, { roughness: 1 }), crate: std(0xd2b27e, { roughness: 0.9 }), carton: std(0xb88d5b, { roughness: 0.95 }), mark: std(0xf3f1e8, { roughness: 0.9 }),
+};
+function addBox(parent, w, h, d, mat, x, y, z, cast = true) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = cast; m.receiveShadow = true; parent.add(m); return m; }
+function addCyl(parent, r, h, mat, x, y, z, seg = 18, r2) { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r2 === undefined ? r : r2, h, seg), mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; }
+function flatPoly(pts, mat, h, depth = 0.05) {
+  const s = new THREE.Shape(); pts.forEach(([x, y], i) => i ? s.lineTo(x, y) : s.moveTo(x, y));
+  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false }); g.rotateX(-Math.PI / 2); g.translate(-62, h, 17);
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; scene.add(m); return m;
+}
+const rectPts = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+function wallSeg(a, b, h, th, mat, base = 0.3) {
+  const pa = W(a[0], a[1]), pb = W(b[0], b[1]), len = pa.distanceTo(pb); if (len < 0.05) return;
+  const m = addBox(scene, len + th * 0.4, h, th, mat, (pa.x + pb.x) / 2, base + h / 2, (pa.z + pb.z) / 2);
+  m.rotation.y = -Math.atan2(pb.z - pa.z, pb.x - pa.x);
+  m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), M.wallEdge));
+}
+
+/* ---- Ground, paving and roads ---- */
+const grass = new THREE.Mesh(new THREE.PlaneGeometry(600, 400), M.grass); grass.rotation.x = -Math.PI / 2; grass.position.y = -0.05; grass.receiveShadow = true; scene.add(grass);
+flatPoly(rectPts(-12, -8, 150, 60), M.pave, -0.03, 0.03);
+flatPoly(rectPts(-40, -16.5, 190, -8.5), M.asphalt, 0.0, 0.03);
+for (let x = -38; x < 188; x += 8) { const p = W(x + 2, -12.5); addBox(scene, 3.6, 0.02, 0.22, M.mark, p.x, 0.045, p.z, false); }
+flatPoly(rectPts(20, -6.5, 141, -1), M.asphalt, 0.0, 0.04);
+flatPoly(rectPts(136.5, -6.5, 141, 30), M.asphalt, 0.0, 0.04);
+flatPoly(rectPts(120.5, -1, 136.5, 12), M.asphalt, 0.0, 0.04);
+flatPoly(rectPts(26, -8.5, 34, -6.5), M.asphalt, 0.0, 0.04); flatPoly(rectPts(44, -8.5, 52, -6.5), M.asphalt, 0.0, 0.04);
+flatPoly(rectPts(20, 53, 80, 58), M.asphalt, 0.0, 0.04); flatPoly(rectPts(20, 48, 25.5, 58), M.asphalt, 0.0, 0.04);
+{ const g = new THREE.RingGeometry(25, 30.5, 72, 1, Math.PI / 2, Math.PI); g.rotateX(-Math.PI / 2); g.translate(23 - 62, 0.04, 17 - 23); const m = new THREE.Mesh(g, M.asphalt); m.receiveShadow = true; scene.add(m); }
+flatPoly(rectPts(82, 1.5, 119.5, 15.5), M.asphalt, 0.0, 0.045);
+for (let i = 0; i <= 15; i++) [4.2, 12.8].forEach(y => { const p = W(82.5 + i * 2.5, y); addBox(scene, 0.1, 0.02, 4.6, M.mark, p.x, 0.07, p.z, false); });
+const carCols = [0x6a7785, 0x9aa3ad, 0x3c4a5a, 0xb9bec4, 0x7b4b45, 0x40576b, 0xd7d9dc, 0x56604f];
+for (let i = 0; i < 30; i++) {
+  if ((i * 7) % 11 < 4) continue;
+  const col = i % 15, row = Math.floor(i / 15); const p = W(83.75 + col * 2.5, row ? 12.8 : 4.2);
+  const mat = std(carCols[i % carCols.length], { roughness: 0.35, metalness: 0.45 });
+  addBox(scene, 1.8, 0.75, 4.3, mat, p.x, 0.5, p.z); addBox(scene, 1.6, 0.55, 2.3, mat, p.x, 1.12, p.z + (row ? 0.3 : -0.3));
+}
+flatPoly(rectPts(110, 2, 115, 7), std(0x7f9a6e), 0.06, 0.02);
+
+/* ---- Building ---- */
+flatPoly(OUTLINE, M.floor, 0, 0.3);
+function distToOutline(p) { let best = 1e9; for (let i = 0; i < OUTLINE.length; i++) { const a = OUTLINE[i], b = OUTLINE[(i + 1) % OUTLINE.length]; const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy; const t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L)) : 0; best = Math.min(best, Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)); } return best; }
+const near = (p, list, r) => list.some(q => Math.hypot(p[0] - q[0], p[1] - q[1]) < r);
+for (let i = 0; i < OUTLINE.length; i++) {
+  const a = OUTLINE[i], b = OUTLINE[(i + 1) % OUTLINE.length], mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  if (near(mid, OUTER_OPENINGS, 1.6) || (mid[0] > 78 && mid[1] > 17 && mid[1] < 21)) continue;
+  wallSeg(a, b, 1.8, 0.3, M.wall);
+}
+const roomPoly = {}, roomArea = {}, pickRooms = [];
+ROOMS.forEach(r => {
+  const poly = r.ext ? rectPts(...r.r) : clipRect(OUTLINE, ...r.r);
+  roomPoly[r.k] = poly; roomArea[r.k] = polyArea(poly);
+  if (r.ext) {
+    const [x0, y0, x1, y1] = r.r;
+    flatPoly(poly, M.floor, 0, 0.3);
+    if (r.k === "HALL") { wallSeg([x0 + 0.3, y0], [x1, y0], 1.8, 0.3, M.wall, 0.3); wallSeg([x0 + 0.3, y1], [x1, y1], 1.8, 0.3, M.wall, 0.3); }
+    else [[[x0, y0], [126.6, y0]], [[129.4, y0], [x1, y0]], [[x1, y0], [x1, y1]], [[x1, y1], [x0, y1]], [[x0, y1], [x0, 21]], [[x0, 17], [x0, y0]]].forEach(([a, b]) => wallSeg(a, b, 1.8, 0.3, M.wall, 0.3));
+  }
+  const tile = flatPoly(poly, r.k === "HALL" ? M.hall : r.s ? M.support : M.prod, 0.3, 0.02);
+  tile.userData.room = r; pickRooms.push(tile);
+  if (r.ext) return;
+  // interior partitions along the room rectangle, inside the outline, with door gaps
+  const [x0, y0, x1, y1] = r.r;
+  [[[x0, y0], [x1, y0]], [[x1, y0], [x1, y1]], [[x1, y1], [x0, y1]], [[x0, y1], [x0, y0]]].forEach(([a, b]) => {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.round(L / 0.5));
+    let start = null, prev = null;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      const ok = inPoly(p, OUTLINE) && distToOutline(p) > 0.35 && !near(p, DOORS, 1.3);
+      if (ok && !start) start = p;
+      if (start && (!ok || i === n)) { wallSeg(start, ok ? p : prev, 1.2, 0.15, M.wall); start = null; }
+      prev = p;
+    }
+  });
+});
+const mainArea = polyArea(OUTLINE);
+
+/* ---- Equipment models (simple engineering massing, muted materials) ---- */
+function model(type, w, d, h) {
+  const g = new THREE.Group();
+  const legs = (top, mat) => { [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => addBox(g, 0.06, top, 0.06, mat, sx * (w / 2 - 0.06), top / 2, sz * (d / 2 - 0.06))); };
+  switch (type) {
+    case "bench": case "desk": legs(h - 0.05, M.darkSteel); addBox(g, w, 0.05, d, type === "desk" ? M.machineCream : M.wood, 0, h - 0.025, 0); addBox(g, w * 0.9, 0.03, d * 0.85, M.darkSteel, 0, 0.18, 0, false); break;
+    case "rollerTable": legs(h - 0.08, M.darkSteel); addBox(g, w, 0.06, 0.06, M.steel, 0, h - 0.05, -d / 2 + 0.03); addBox(g, w, 0.06, 0.06, M.steel, 0, h - 0.05, d / 2 - 0.03); for (let x = -w / 2 + 0.15; x < w / 2; x += 0.2) { const r = addCyl(g, 0.035, d - 0.1, M.steel, x, h - 0.04, 0, 8); r.rotation.x = Math.PI / 2; r.castShadow = false; } break;
+    case "lumberRack": addBox(g, 0.12, h, 0.12, M.darkSteel, -w / 2 + 0.1, h / 2, 0); addBox(g, 0.12, h, 0.12, M.darkSteel, w / 2 - 0.1, h / 2, 0); for (let t = 0; t < 4; t++) { const y = 0.35 + t * 0.6; addBox(g, w, 0.05, 0.08, M.darkSteel, 0, y, 0); addBox(g, w * 0.92, 0.28, d * 0.85, M.lumber, 0, y + 0.17, 0); } break;
+    case "cabinet": addBox(g, w, h, d, M.panelWhite, 0, h / 2, 0); addBox(g, 0.02, h * 0.8, 0.02, M.darkSteel, 0, h / 2, d / 2 + 0.01, false); break;
+    case "flamCab": addBox(g, w, h, d, M.flam, 0, h / 2, 0); break;
+    case "forklift": addBox(g, w * 0.55, 1.0, d, M.fork, 0.25, 0.75, 0); addBox(g, 0.08, 2.2, d * 0.7, M.darkSteel, -w / 2 + 0.55, 1.1, 0); addBox(g, 1.0, 0.05, 0.12, M.darkSteel, -w / 2 + 0.05, 0.12, -0.25); addBox(g, 1.0, 0.05, 0.12, M.darkSteel, -w / 2 + 0.05, 0.12, 0.25); addBox(g, 0.9, 0.06, d * 0.9, M.darkSteel, 0.35, 2.1, 0); [[-0.2, -1], [-0.2, 1], [0.9, -1], [0.9, 1]].forEach(([x, s]) => { const t = addCyl(g, 0.25, 0.2, M.rubber, x, 0.25, s * (d / 2 - 0.05), 14); t.rotation.x = Math.PI / 2; }); break;
+    case "cart": legs(0.6, M.darkSteel); addBox(g, w, 0.04, d, M.steel, 0, 0.6, 0); addBox(g, w * 0.9, 0.04, d * 0.9, M.steel, 0, 0.15, 0); addBox(g, w * 0.8, 0.22, d * 0.8, M.crate, 0, 0.73, 0); break;
+    case "resaw": addBox(g, w, 0.9, d * 0.5, M.machine, 0, 0.45, 0); addBox(g, 0.35, h, 0.4, M.machine, -w / 2 + 0.25, h / 2, 0); [h - 0.5, 1.35].forEach(y => { const c = addCyl(g, 0.48, 0.25, M.machineCream, 0.05, y, 0, 20); c.rotation.x = Math.PI / 2; }); addBox(g, w, 0.05, d, M.steel, 0, 0.92, 0); break;
+    case "panelSaw": addBox(g, 1.2, 0.85, 1.0, M.machine, 0.6, 0.43, 0); addBox(g, w, 0.05, d * 0.45, M.steel, 0, 0.88, -d * 0.2); addBox(g, 1.5, 0.05, d, M.steel, 0.55, 0.88, 0); addBox(g, 0.5, 0.25, 0.3, M.machineCream, 0.55, 1.5, 0); addBox(g, 0.05, 0.6, 0.05, M.darkSteel, 0.55, 1.2, 0); break;
+    case "jointer": addBox(g, w * 0.5, 0.75, d, M.machine, 0, 0.38, 0); addBox(g, w, 0.06, d, M.steel, 0, 0.8, 0); addBox(g, w * 0.6, 0.15, 0.05, M.steel, 0, 0.9, d / 2 - 0.03); break;
+    case "planer": addBox(g, w, h * 0.7, d, M.machine, 0, h * 0.35, 0); addBox(g, w, 0.25, d * 0.8, M.machineCream, 0, h * 0.82, 0); addBox(g, w * 0.9, 0.04, d * 1.6, M.steel, 0, h * 0.55, 0); break;
+    case "drum": addBox(g, w, h, d, M.machineCream, 0, h / 2, 0); addBox(g, w * 0.92, 0.12, d + 0.5, M.rubber, 0, 0.85, 0); addBox(g, 0.4, 0.5, 0.3, M.darkSteel, w / 2 + 0.2, h - 0.4, 0); break;
+    case "clampRack": addBox(g, w, 0.06, d, M.darkSteel, 0, 0.05, 0); addBox(g, 0.06, h, 0.06, M.darkSteel, 0, h / 2, -d / 2 + 0.05); addBox(g, 0.06, h, 0.06, M.darkSteel, 0, h / 2, d / 2 - 0.05); for (let t = 0; t < 5; t++) addBox(g, w * 0.9, 0.04, d * 0.95, M.steel, 0, 0.3 + t * 0.25, 0); break;
+    case "cnc": addBox(g, w, 0.8, d * 0.8, M.cnc, 0, 0.4, 0); addBox(g, w * 0.95, 0.06, d * 0.75, M.darkSteel, 0, 0.83, 0); [-1, 1].forEach(s => addBox(g, 0.18, h - 0.8, 0.5, M.cnc, s * (w / 2 - 0.1), 0.8 + (h - 0.8) / 2, 0)); addBox(g, w, 0.35, 0.5, M.cnc, 0, h - 0.18, 0); addBox(g, 0.35, 0.8, 0.35, M.machineCream, 0, h - 0.6, 0.2); addBox(g, 0.6, 1.6, 0.4, M.panelWhite, w / 2 + 0.3, 0.8, d / 2 - 0.3); break;
+    case "gobar": legs(0.75, M.darkSteel); addBox(g, w, 0.08, d, M.wood, 0, 0.78, 0); addBox(g, w, 0.06, 0.08, M.wood, 0, h, -d / 2 + 0.1); addBox(g, w, 0.06, 0.08, M.wood, 0, h, d / 2 - 0.1); for (let i = 0; i < 8; i++) { const r = addCyl(g, 0.012, h - 0.8, M.white, -w / 2 + 0.15 + i * (w - 0.3) / 7, 0.8 + (h - 0.8) / 2, (i % 2 ? 0.15 : -0.15), 6); r.castShadow = false; } break;
+    case "bender": legs(0.85, M.darkSteel); addBox(g, w, 0.05, d, M.steel, 0, 0.88, 0); { const c = addCyl(g, 0.28, 0.12, M.machineCream, 0, 1.0, 0, 20); c.rotation.x = Math.PI / 2; } break;
+    case "laser": addBox(g, w, 0.9, d, M.panelWhite, 0, 0.45, 0); addBox(g, w, 0.15, d, M.glass, 0, 0.98, 0); addBox(g, w * 0.95, 0.04, d * 0.9, M.darkSteel, 0, 1.06, 0); break;
+    case "bandsaw": addBox(g, w, 0.9, d, M.machine, 0, 0.45, 0); addBox(g, 0.2, h - 0.9, 0.3, M.machine, -w / 2 + 0.15, 0.9 + (h - 0.9) / 2, 0); addBox(g, w * 0.7, 0.4, 0.3, M.machine, 0, h - 0.2, 0); addBox(g, w, 0.04, d, M.steel, 0.05, 0.95, 0); break;
+    case "spindle": addCyl(g, Math.min(w, d) * 0.35, h * 0.85, M.machine, 0, h * 0.42, 0); addBox(g, w, 0.05, d, M.steel, 0, h * 0.86, 0); addCyl(g, 0.04, 0.2, M.darkSteel, 0, h * 0.96, 0, 8); break;
+    case "routerJig": legs(0.85, M.darkSteel); addBox(g, w, 0.05, d, M.wood, 0, 0.88, 0); addBox(g, 0.12, 0.6, 0.12, M.darkSteel, -w / 2 + 0.15, 1.2, 0); addBox(g, w * 0.7, 0.08, 0.1, M.darkSteel, 0, 1.5, 0); addCyl(g, 0.07, 0.25, M.machineCream, 0.2, 1.35, 0, 10); break;
+    case "shelf": [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => addBox(g, 0.05, h, 0.05, M.darkSteel, sx * (w / 2 - 0.03), h / 2, sz * (d / 2 - 0.03))); for (let t = 0; t < 4; t++) addBox(g, w, 0.03, d, M.steel, 0, 0.15 + t * (h - 0.2) / 3, 0); for (let t = 0; t < 3; t++) addBox(g, w * 0.8, 0.22, d * 0.7, M.crate, 0, 0.3 + t * (h - 0.2) / 3, 0); break;
+    case "press": legs(0.8, M.darkSteel); addBox(g, w, 0.06, d, M.wood, 0, 0.83, 0); addBox(g, 0.1, 0.45, 0.1, M.machine, 0, 1.08, -0.15); addBox(g, 0.2, 0.08, 0.35, M.machine, 0, 1.3, 0); break;
+    case "beltSander": addBox(g, w * 0.4, 0.8, d, M.machine, 0, 0.4, 0); addBox(g, w, 0.18, d * 0.6, M.machineCream, 0, 0.92, 0); addBox(g, w * 0.95, 0.04, d * 0.6, M.rubber, 0, 1.02, 0); break;
+    case "downdraft": addBox(g, w, h - 0.05, d, M.machine, 0, (h - 0.05) / 2, 0); addBox(g, w, 0.05, d, M.darkSteel, 0, h - 0.02, 0); break;
+    case "booth": addBox(g, w, h, 0.06, M.panelWhite, 0, h / 2, -d / 2); [-1, 1].forEach(s => addBox(g, 0.06, h, d, M.panelWhite, s * w / 2, h / 2, 0)); addBox(g, w, 0.06, d, M.glass, 0, h, 0); addBox(g, w * 0.8, h * 0.6, 0.08, M.fabric, 0, h * 0.45, -d / 2 + 0.08); addCyl(g, 0.25, 1.4, M.steel, w / 4, h + 0.7, -d / 3, 14); addBox(g, 1.2, 0.6, 1.0, M.machine, 0, 0.3, 0.1); break;
+    case "pot": addCyl(g, 0.18, 0.55, M.steel, 0, 0.28, 0, 14); break;
+    case "tunnel": addBox(g, w, 0.75, d, M.darkSteel, 0, 0.38, 0); addBox(g, w * 0.7, 0.7, d, M.panelWhite, 0, 1.12, 0); addBox(g, w, 0.04, d * 0.8, M.rubber, 0, 0.78, 0); break;
+    case "cureRack": [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1]].forEach(([sx, sz]) => addBox(g, 0.08, h, 0.08, M.darkSteel, sx * (w / 2 - 0.04), h / 2 + 0.1, sz * (d / 2 - 0.04))); for (let t = 0; t < 6; t++) addBox(g, w, 0.03, d, M.steel, 0, 0.06 + t * 0.3, 0, false); break;
+    case "lowRack": [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => addBox(g, 0.06, h + 0.3, 0.06, M.darkSteel, sx * (w / 2 - 0.03), (h + 0.3) / 2, sz * (d / 2 - 0.03))); for (let t = 0; t < 4; t++) addBox(g, w, 0.03, d, M.steel, 0, 0.42 + t * 0.3, 0, false); break;
+    case "roomBox": addBox(g, w, h, 0.08, M.panelWhite, 0, h / 2, -d / 2); [-1, 1].forEach(s => addBox(g, 0.08, h, d, M.panelWhite, s * w / 2, h / 2, 0)); addBox(g, w * 0.35, h, 0.08, M.panelWhite, -w * 0.32, h / 2, d / 2); addBox(g, w * 0.35, h, 0.08, M.panelWhite, w * 0.32, h / 2, d / 2); addBox(g, w, 0.05, d, M.glass, 0, h, 0); break;
+    case "buffer": addCyl(g, 0.18, 0.9, M.machine, 0, 0.45, 0, 12); addBox(g, 0.7, 0.3, 0.3, M.machine, 0, 1.05, 0); [-1, 1].forEach(s => { const c = addCyl(g, 0.2, 0.06, M.white, s * 0.45, 1.05, 0, 18); c.rotation.z = Math.PI / 2; }); break;
+    case "drill": legs(0.88, M.darkSteel); addBox(g, w, 0.06, d, M.machine, 0, 0.9, 0); addCyl(g, 0.05, h - 0.9, M.steel, 0, 0.9 + (h - 0.9) / 2, -0.15, 8); addBox(g, 0.25, 0.3, 0.4, M.machine, 0, h - 0.2, 0); break;
+    case "machine": addBox(g, w, h * 0.75, d, M.machine, 0, h * 0.38, 0); addBox(g, w * 0.7, h * 0.25, d * 0.7, M.machineCream, 0, h * 0.87, 0); break;
+    case "wrapper": addCyl(g, 0.85, 0.1, M.darkSteel, -0.3, 0.05, 0, 28); addBox(g, 0.2, h, 0.2, M.machine, w / 2 - 0.25, h / 2, 0); addBox(g, 0.4, 0.3, 0.3, M.machineCream, w / 2 - 0.45, 1.3, 0); break;
+    case "leveler": addBox(g, w, 0.1, d, M.darkSteel, 0, 0.05, 0); break;
+    case "palletRack": { const blue = std(0x3d5f8a), orange = std(0xb7703a); [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => addBox(g, 0.08, h, 0.08, blue, sx * (w / 2 - 0.04), h / 2, sz * (d / 2 - 0.04))); for (let t = 0; t < 3; t++) { addBox(g, w, 0.1, d, orange, 0, 0.1 + t * 1.3, 0); addBox(g, w * 0.85, 0.7, d * 0.9, M.carton, 0, 0.55 + t * 1.3, 0); } } break;
+    case "jack": addBox(g, 0.55, 0.08, 1.15, M.darkSteel, 0, 0.08, -0.15); addBox(g, 0.4, 0.3, 0.3, std(0xb34a2f), 0, 0.25, 0.6); addBox(g, 0.04, 1.0, 0.04, M.darkSteel, 0, 0.7, 0.75); break;
+    case "dining": legs(h, M.darkSteel); addBox(g, w, 0.05, d, M.wood, 0, h, 0); [-1, 1].forEach(s => addBox(g, w, 0.45, 0.3, M.wood, 0, 0.23, s * (d / 2 + 0.2))); break;
+    case "counter": addBox(g, w, h, d, M.machineCream, 0, h / 2, 0); addBox(g, w, 0.04, d, M.steel, 0, h + 0.02, 0); break;
+    case "bed": addBox(g, w, 0.6, d, M.panelWhite, 0, 0.3, 0); addBox(g, w * 0.95, 0.12, d * 0.9, std(0x8aa7b8), 0, 0.66, 0); addBox(g, 0.5, 0.7, 0.2, std(0x5b8f6a), w / 2 + 0.3, 1.2, -d / 2 + 0.1); break;
+    case "shower": { const gr = std(0x5b8f6a); addBox(g, 0.08, h, 0.08, gr, 0, h / 2, 0); addBox(g, 0.5, 0.05, 0.05, gr, 0.25, h, 0); addCyl(g, 0.15, 0.05, gr, 0.45, h - 0.05, 0, 12); addCyl(g, 0.2, 0.08, gr, 0, 1.0, 0.25, 12); } break;
+    case "panel": addBox(g, w, h, d, M.panelWhite, 0, 0.45 + h / 2, 0); break;
+    case "sofa": { const f = std(0x6f7e86); addBox(g, w, 0.4, d, f, 0, 0.2, 0); addBox(g, w, 0.4, 0.2, f, 0, 0.55, -d / 2 + 0.1); } break;
+    case "display": addBox(g, w, h, d, M.wood, 0, h / 2, 0); for (let i = 0; i < 5; i++) addBox(g, 0.32, 0.95, 0.06, i % 2 ? M.fin : M.raw, -w / 2 + 0.4 + i * 0.55, 1.2, d / 2 + 0.05); break;
+    case "switchgear": addBox(g, w, h, d, std(0xc9ccc6), 0, h / 2, 0); for (let i = 1; i < Math.round(w / 0.6); i++) addBox(g, 0.02, h * 0.92, 0.02, M.darkSteel, -w / 2 + i * 0.6, h / 2, d / 2 + 0.01, false); break;
+    case "baghouse": addCyl(g, w / 2, h - 3.4, M.tank, 0, 3.4 + (h - 3.4) / 2, 0, 24); addCyl(g, w / 2, 1.4, M.tank, 0, 2.7, 0, 24, 0.3); [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => addBox(g, 0.12, 3.4, 0.12, M.darkSteel, sx * w * 0.32, 1.7, sz * w * 0.32)); addCyl(g, 0.35, 1.6, M.steel, w / 2 + 0.4, h - 1.0, 0, 12); addBox(g, 0.9, 0.9, 0.9, M.machine, w / 2 + 0.5, h - 2.2, 0); break;
+    case "skip": addBox(g, w, h, d, std(0x7c8a5a), 0, h / 2, 0); addBox(g, w * 0.9, 0.2, d * 0.85, std(0xa98b5e), 0, h - 0.05, 0); break;
+    case "vtankBig": addCyl(g, w / 2, h, M.blueTank, 0, h / 2, 0, 32); addCyl(g, w / 2 + 0.02, 0.1, M.steel, 0, h + 0.05, 0, 32); break;
+    case "vtank": addCyl(g, w / 2, h, M.tank, 0, h / 2, 0, 18); break;
+    case "pump": { const pb = std(0x4c6a8a); addBox(g, w, 0.15, d, M.darkSteel, 0, 0.08, 0); const c = addCyl(g, d * 0.3, w * 0.45, pb, -w * 0.18, 0.45, 0, 14); c.rotation.z = Math.PI / 2; addCyl(g, d * 0.35, d * 0.5, pb, w * 0.28, 0.45, 0, 14); } break;
+    case "compressor": addBox(g, w, h, d, std(0x55707f), 0, h / 2, 0); addBox(g, w * 0.4, 0.05, d * 0.8, M.darkSteel, -w * 0.2, h + 0.02, 0); break;
+    case "chiller": addBox(g, w, h, d, std(0xc4c8c2), 0, h / 2, 0); [-1, 0, 1].forEach(i => addCyl(g, 0.22, 0.3, M.tank, i * 0.9, h * 0.5, d / 2 + 0.1, 12)); break;
+    case "tower": addBox(g, w, h, d, std(0x8e9aa3), 0, h / 2, 0); addCyl(g, w * 0.4, 0.6, M.darkSteel, 0, h + 0.3, 0, 24); for (let i = 0; i < 5; i++) addBox(g, w * 1.01, 0.04, d * 1.01, M.darkSteel, 0, 0.4 + i * 0.45, 0, false); break;
+    case "ahu": addBox(g, w, h, d, std(0xbfc3bd), 0, h / 2, 0); addCyl(g, 0.4, 0.15, M.darkSteel, w * 0.25, h + 0.05, 0, 16); break;
+    case "septic": addBox(g, w, 0.15, d, M.concrete, 0, 0.08, 0); [-1, 1].forEach(s => addCyl(g, 0.35, 0.06, M.darkSteel, s * 1.1, 0.17, 0, 16)); break;
+    case "pole": addCyl(g, 0.15, h, std(0x8b7d68), 0, h / 2, 0, 10); addBox(g, 2.4, 0.12, 0.12, M.darkSteel, 0, h - 0.4, 0); [-1, 0, 1].forEach(i => addCyl(g, 0.07, 0.4, M.white, i * 1.0, h - 0.15, 0, 8)); addBox(g, 0.3, 0.6, 0.15, M.darkSteel, 0.4, h - 1.3, 0); break;
+    case "transformer": { const tg = std(0x6f8068); addBox(g, w * 0.7, h, d, tg, 0, h / 2, 0); for (let i = 0; i < 8; i++) addBox(g, 0.03, h * 0.75, d * 0.8 / 8, tg, w * 0.37, h * 0.42, -d * 0.4 + (i + 0.5) * d * 0.1); addBox(g, 0.4, 0.3, 0.3, M.darkSteel, -w * 0.15, h + 0.15, 0); } break;
+    case "genset": { const gg = std(0x6d7a5f); addBox(g, w, h, d, gg, 0, h / 2, 0); addCyl(g, 0.12, 0.8, M.darkSteel, w / 2 - 0.4, h + 0.4, 0, 10); for (let i = 0; i < 6; i++) addBox(g, 0.02, h * 0.5, 0.02, M.darkSteel, -w / 2 + 0.4 + i * 0.12, h * 0.55, d / 2 + 0.01, false); } break;
+    case "dayTank": addBox(g, w, h, d, std(0x7b7f83), 0, h / 2, 0); break;
+    case "earthPit": addBox(g, w, 0.08, d, M.concrete, 0, 0.04, 0); break;
+    case "hydrant": addCyl(g, 0.14, 0.75, M.red, 0, 0.38, 0, 12); addCyl(g, 0.17, 0.12, M.red, 0, 0.8, 0, 12); break;
+    case "streetLight": addCyl(g, 0.09, h, M.darkSteel, 0, h / 2, 0, 8); addBox(g, 0.12, 0.08, 1.8, M.darkSteel, 0, h, 0.85); addBox(g, 0.35, 0.1, 0.6, M.panelWhite, 0, h - 0.05, 1.7); break;
+    case "boom": addBox(g, 0.35, 1.0, 0.35, std(0xc7b04a), 0, 0.5, 0); addBox(g, 4.2, 0.08, 0.08, M.white, 2.1, 0.95, 0); break;
+    default: addBox(g, w, h, d, M.machine, 0, h / 2, 0);
+  }
+  return g;
+}
+const eqItems = [], eqGroups = [];
+EQ.forEach((e, idx) => {
+  const [room, name, qty, fn, kw, fw, fd, h, type, places] = e;
+  const item = { idx, room, name, qty, fn, kw, fw, fd, h, type, places, groups: [] };
+  eqItems.push(item);
+  const outdoors = room === "YARD" || room === "POWER" || room === "SITE";
+  places.forEach(([x, y, rot]) => {
+    const g = model(type, fw, fd, h);
+    g.position.copy(W(x, y, outdoors ? (room === "SITE" ? 0 : 0.12) : 0.32));
+    if (rot === 90) g.rotation.y = Math.PI / 2;
+    if (type === "streetLight") g.rotation.y = Math.PI;
+    if (type === "boom" && x < 40) g.rotation.y = Math.PI;
+    g.traverse(o => { if (o.isMesh) o.userData.eq = item; });
+    scene.add(g); item.groups.push(g); eqGroups.push(g);
+  });
+});
+function slotPos(rect, i, sx = 1.0, sz = 1.35, th = 0.3, base = 0.42) {
+  const [x0, y0, x1, y1] = rect;
+  const cols = Math.max(1, Math.floor((x1 - x0) / sx)), rows = Math.max(1, Math.floor((y1 - y0) / sz)), per = cols * rows;
+  const tier = Math.floor(i / per), j = i % per, c = j % cols, r = Math.floor(j / cols);
+  return W(x0 + sx * (c + 0.5), y1 - sz * (r + 0.5), base + tier * th);
+}
+// body molds in the Body Assembly cure zone
+{ const molds = eqItems.find(i => i.name.startsWith("Body molds")); const grp = new THREE.Group(); scene.add(grp); molds.groups.push(grp); eqGroups.push(grp);
+  for (let i = 0; i < 24; i++) { const p = slotPos(ZONES.mold.r, i); const m = addBox(grp, 0.95, 0.12, 1.25, M.darkSteel, p.x, 0.36, p.z, false); m.userData.eq = molds; } }
+// conveyor
+const convItem = eqItems.find(i => i.name.startsWith("Powered roller conveyor"));
+{ const grp = new THREE.Group(); scene.add(grp); convItem.groups.push(grp); eqGroups.push(grp);
+  for (let i = 0; i < CONVEYOR.length - 1; i++) {
+    const a = W(...CONVEYOR[i]), b = W(...CONVEYOR[i + 1]), len = a.distanceTo(b), ang = -Math.atan2(b.z - a.z, b.x - a.x);
+    const seg = new THREE.Group(); seg.position.set((a.x + b.x) / 2, 0.3, (a.z + b.z) / 2); seg.rotation.y = ang; grp.add(seg);
+    addBox(seg, len + 0.8, 0.12, 0.08, M.darkSteel, 0, 0.8, -0.38); addBox(seg, len + 0.8, 0.12, 0.08, M.darkSteel, 0, 0.8, 0.38);
+    for (let x = -len / 2; x <= len / 2; x += 2.4) [-0.36, 0.36].forEach(z => addBox(seg, 0.06, 0.75, 0.06, M.darkSteel, x, 0.38, z, false));
+    for (let x = -len / 2; x <= len / 2; x += 0.6) { const r = addCyl(seg, 0.03, 0.72, M.steel, x, 0.84, 0, 6); r.rotation.x = Math.PI / 2; r.castShadow = false; }
+  }
+  grp.traverse(o => { if (o.isMesh) o.userData.eq = convItem; }); }
+const CONV_LEN = (() => { let L = 0; for (let i = 1; i < CONVEYOR.length; i++) L += Math.hypot(CONVEYOR[i][0] - CONVEYOR[i - 1][0], CONVEYOR[i][1] - CONVEYOR[i - 1][1]); return L; })();
+function convAt(f) { let d = f * CONV_LEN; for (let i = 1; i < CONVEYOR.length; i++) { const a = CONVEYOR[i - 1], b = CONVEYOR[i], l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (d <= l || i === CONVEYOR.length - 1) { const t = Math.min(1, d / l); return W(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, 1.25); } d -= l; } }
+
+// Structures: compressor house, fire pump house, guard house, plant pads, power yard fence
+function openHouse(x0, y0, x1, y1, h, doorSide) {
+  flatPoly(rectPts(x0, y0, x1, y1), M.concrete, 0, 0.12);
+  [[[x0, y0], [x1, y0]], [[x1, y0], [x1, y1]], [[x1, y1], [x0, y1]], [[x0, y1], [x0, y0]]].forEach(([a, b], i) => {
+    if (i !== doorSide) return wallSeg(a, b, h, 0.2, M.wall, 0.12);
+    const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ux = Math.sign(b[0] - a[0]), uy = Math.sign(b[1] - a[1]);
+    wallSeg(a, [m[0] - ux * 0.6, m[1] - uy * 0.6], h, 0.2, M.wall, 0.12); wallSeg([m[0] + ux * 0.6, m[1] + uy * 0.6], b, h, 0.2, M.wall, 0.12);
+  });
+}
+openHouse(43.5, 46.35, 49.5, 50.85, 1.6, 0);
+openHouse(50.5, 46.1, 54.5, 49.1, 1.6, 0);
+openHouse(36.5, -8.9, 41.5, -6.6, 2.6, 2);
+flatPoly(rectPts(63.8, 45.8, 77.2, 51), M.concrete, 0, 0.12);
+flatPoly(rectPts(82, 40.4, 99, 42.6), M.concrete, 0, 0.12);
+flatPoly(rectPts(27.6, 47.4, 36, 52), M.concrete, 0, 0.1);
+flatPoly(rectPts(83, 26, 97, 37.5), std(0xa9a69d, { roughness: 1 }), 0, 0.1);
+{ const fenceMat = new THREE.MeshStandardMaterial({ color: 0x6e7479, transparent: true, opacity: 0.45, depthWrite: false });
+  [[[83, 26], [97, 26]], [[97, 26], [97, 37.5]], [[97, 37.5], [91, 37.5]], [[89, 37.5], [83, 37.5]], [[83, 37.5], [83, 26]]].forEach(([a, b]) => wallSeg(a, b, 2.1, 0.04, fenceMat, 0));
+  for (let x = 83; x <= 97; x += 2) [26, 37.5].forEach(y => { const p = W(x, y); addCyl(scene, 0.04, 2.2, M.darkSteel, p.x, 1.1, p.z, 6); }); }
+// cable trench from the power yard to the Electrical Room
+[[85, 29.5], [83, 28], [79.6, 28]].reduce((a, b) => { const A = W(...a), B = W(...b), len = A.distanceTo(B); const m = addBox(scene, len, 0.06, 0.6, M.concrete, (A.x + B.x) / 2, 0.06, (A.z + B.z) / 2, false); m.rotation.y = -Math.atan2(B.z - A.z, B.x - A.x); return b; });
+// MV overhead line from the main road
+const MV = [[143, -12], [143, 8], [143, 30], [119, 38.5], [95.5, 36.5]];
+MV.slice(0, -1).forEach(([x, y]) => { const g = model("pole", 0.6, 0.6, 10); g.position.copy(W(x, y)); scene.add(g); });
+{ const wireMat = new THREE.LineBasicMaterial({ color: 0x2c2f33 });
+  [-1, 0, 1].forEach(o => { const pts = []; for (let i = 0; i < MV.length - 1; i++) { const a = W(MV[i][0], MV[i][1], 9.85), b = W(MV[i + 1][0], MV[i + 1][1], 9.85), nx = -(b.z - a.z), nz = b.x - a.x, nl = Math.hypot(nx, nz); for (let k = 0; k <= 12; k++) { const t = k / 12, p = a.clone().lerp(b, t); p.y -= Math.sin(Math.PI * t) * 0.6; p.x += o * nx / nl; p.z += o * nz / nl; pts.push(p); } } scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat)); }); }
+// fire extinguishers in every room
+ROOMS.forEach(r => { const [x0, y0, x1, y1] = r.r; const cand = [[x1 - 0.5, y1 - 0.5], [x0 + 0.5, y1 - 0.5], [x1 - 0.5, y0 + 0.5], [x0 + 0.5, y0 + 0.5]].find(p => inPoly(p, roomPoly[r.k]) && (r.ext || distToOutline(p) > 0.4)); if (!cand) return; const p = W(cand[0], cand[1]); addCyl(scene, 0.09, 0.55, M.red, p.x, 0.6, p.z, 10); });
+// trees
+const treeMat = std(0x6f8f62, { roughness: 1 }), trunkMat = std(0x7a6248);
+[[-11, 2], [-11, 14], [-11, 36], [-6, 50], [6, 56], [14, 58], [84, 52], [92, 50], [100, 46], [108, 44], [147, 6], [147, 40], [147, 52], [104, 30], [110, 33], [72, -0.5]].forEach(([x, y]) => { const p = W(x, y); const t = new THREE.Mesh(new THREE.SphereGeometry(1.7, 14, 10), treeMat); t.position.set(p.x, 3.0, p.z); t.castShadow = true; scene.add(t); addCyl(scene, 0.18, 1.6, trunkMat, p.x, 0.8, p.z, 8); });
+
+/* ---- Andon lights at simulation stations ---- */
+const lamps = {};
+POOL_DEF.forEach(([key]) => { lamps[key] = ST[key].pos.map(([x, y]) => {
+  const p = W(x, y); addCyl(scene, 0.025, 2.0, M.darkSteel, p.x + 0.8, 1.3, p.z - 0.45, 6);
+  const lm = new THREE.MeshStandardMaterial({ color: 0x9aa5b0, emissive: 0x9aa5b0, emissiveIntensity: 0.7 });
+  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.22, 12), lm); s.position.set(p.x + 0.8, 2.35, p.z - 0.45); scene.add(s); return lm; }); });
+
+/* ================= Flow indicators ================= */
+function stripeCanvas(alphaGaps) {
+  const c = document.createElement("canvas"); c.width = 128; c.height = 8; const x = c.getContext("2d");
+  x.fillStyle = alphaGaps ? "rgba(0,0,0,0)" : "rgb(150,150,150)"; x.fillRect(0, 0, 128, 8);
+  const g = x.createLinearGradient(0, 0, 128, 0); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.55, "rgba(255,255,255,1)"); g.addColorStop(0.62, alphaGaps ? "rgba(0,0,0,0)" : "rgb(150,150,150)"); g.addColorStop(1, alphaGaps ? "rgba(0,0,0,0)" : "rgb(150,150,150)");
+  x.fillStyle = g; x.fillRect(0, 0, 128, 8); return c;
+}
+const STRIPE = stripeCanvas(false), DASH = stripeCanvas(true);
+const arc = (r, a0, a1, n) => Array.from({ length: n + 1 }, (_, i) => { const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180; return [23 + r * Math.cos(a), 23 + r * Math.sin(a)]; });
+const FLOWS = [
+  { key: "inbound", group: "Process", name: "Inbound lumber and supplies", color: "#92400e", w: 0.28, desc: "Supply van and weekly lumber truck: Entrance Gate → west loop road → Raw Materials Storage receiving door",
+    segs: [{ h: 0.35, pts: [[48, -15], [48, -3.4], [23, -3.4], ...arc(26.3, 270, 90, 18), [23, 49.3]] }, { h: 1.3, smooth: true, pts: [[23, 49.3], [18, 46.8], [17.3, 43.2], [17, 35.6]] }] },
+  { key: "body", group: "Process", name: "Body line", color: "#c026d3", w: 0.26, desc: "Kitting → Wood Processing → plate glue → bracing → Body Assembly → mold cure → sanding → spray → 48 h cure → buff → Hardware",
+    segs: [{ h: 2.8, smooth: true, pts: [[17, 35], [25, 35.5], [37, 34.5], [64.6, 36], [44, 30.5], [12.75, 26.5], [29.5, 25], [8.75, 15.5], [20, 15.8], [27, 13.5], [32.5, 15], [42, 16.3]] }] },
+  { key: "neck", group: "Process", name: "Neck line", color: "#0d9488", w: 0.26, desc: "Kitting → Wood Processing → CNC → Neck Assembly → fretboard cure → sanding → spray → 48 h cure → buff → matched-set rack",
+    segs: [{ h: 3.4, smooth: true, pts: [[17, 35], [32, 35.5], [52, 36], [48, 26], [63, 23.2], [37.5, 19.6], [14, 15.5], [21.8, 15.8], [27, 12], [32.5, 13.6], [45, 10.5], [43.6, 16.3]] }] },
+  { key: "assembled", group: "Process", name: "Assembled guitar", color: "#1e3a8a", w: 0.26, desc: "Hardware Installation → overnight settle → Quality Inspection → Packaging",
+    segs: [{ h: 2.2, smooth: true, pts: [[42, 16.3], [42.5, 13.5], [53.75, 16.3], [67, 15.8]] }] },
+  { key: "rework", group: "Process", name: "Rework loop (3.6%)", color: "#fb7185", w: 0.2, dashed: true, desc: "Guitars that fail inspection go back to Hardware Installation once",
+    segs: [{ smooth: true, pts: [[53.2, 15.4, 1.4], [50, 14.6, 3.6], [46.9, 15.4, 1.4]] }] },
+  { key: "finished", group: "Process", name: "Finished goods and outbound truck", color: "#65a30d", w: 0.28, desc: "Packaging → 55 m conveyor → Shipping staging → dock → daily 16:30 truck → Exit Gate",
+    segs: [{ h: 1.55, pts: [[67, 15.8], ...CONVEYOR, [122.5, 19], [129, 22.5], [128, 13.4]] }, { h: 0.35, pts: [[128, 13.4], [128, 4], [128, -4.8], [30, -4.8], [30, -15]] }] },
+  { key: "staff", group: "Process", name: "Staff and visitors", color: "#111827", w: 0.16, dashed: true, desc: "Entrance Gate → parking → front walkway → Lobby",
+    segs: [{ h: 0.3, pts: [[48, -15], [48, -3.4], [100, -3.4], [100, 6]] }, { h: 0.3, pts: [[96, 8.5], [82, 0.5], [36, -0.6], [35.5, 3.5]] }] },
+  { key: "water", group: "Utility", name: "Potable / process water", color: "#2563eb", w: 0.09, pipe: true, desc: "40 m³ tank → booster pumps → canteen, rest rooms, eyewash, finish mixing",
+    segs: [{ h: 3.6, pts: [[39, 50.2], [42.4, 47.6], [42.4, 44.2], [38.6, 42], [38.6, 8.4], [8, 8.4]] }, { h: 3.6, pts: [[38.6, 8.4], [62, 8.4]] }, { h: 3.6, pts: [[17.6, 8.4], [17.6, 10.4]] }, { h: 3.6, pts: [[20.3, 8.4], [20.3, 5.4]] }, { h: 3.6, pts: [[28.8, 8.4], [28.8, 5.8]] }, { h: 3.6, pts: [[13, 8.4], [13, 6.4]] }] },
+  { key: "fire", group: "Utility", name: "Fire protection (sprinkler)", color: "#dc2626", w: 0.11, pipe: true, desc: "190 m³ reserve → fire pumps → sprinkler mains in every aisle, and the yard hydrant",
+    segs: [{ h: 5.4, pts: [[52.5, 47.6], [52.5, 43], [37.4, 41.4], [37.4, 19.25], [2, 19.25]] }, { h: 5.4, pts: [[37.4, 19.25], [76, 19.25]] }, { h: 5.4, pts: [[37.4, 19.25], [37.4, 8.0], [6, 8.0]] }, { h: 5.4, pts: [[37.4, 8.0], [64, 8.0]] }, { h: 5.4, pts: [[37.4, 39], [10, 39]] }, { h: 5.4, pts: [[37.4, 41.4], [60, 38.5], [75, 33]] }, { h: 5.4, pts: [[76, 19.25], [120, 19.6], [128, 19.6]] }, { h: 0.12, pts: [[52.5, 46.1], [52.5, 52.6], [64, 52.6]] }] },
+  { key: "air", group: "Utility", name: "Compressed air", color: "#eab308", w: 0.09, pipe: true, desc: "Compressors → dryer → 1,000 L receiver → ring main with drops to sanders, booths and CNCs",
+    segs: [{ h: 4.2, pts: [[46.6, 49.8], [46.6, 44.6], [44, 41.8], [44, 19.75], [3, 19.75]] }, { h: 4.2, pts: [[44, 19.75], [70, 19.75]] }, { h: 4.2, pts: [[44, 38], [22, 38]] }, { h: 4.2, pts: [[44, 38], [66, 38]] }, { h: 4.2, pts: [[44, 19.75], [44, 8.8], [6, 8.8]] }, { h: 4.2, pts: [[44, 8.8], [66, 8.8]] }] },
+  { key: "vac", group: "Utility", name: "Vacuum", color: "#16a34a", w: 0.09, pipe: true, desc: "Claw vacuum pump → CNC vacuum tables and go-bar clamps",
+    segs: [{ h: 3.9, pts: [[48.4, 48.6], [48.4, 44.2], [46.2, 41.6], [46.2, 37.6], [64.6, 37.6]] }, { h: 3.9, pts: [[52, 37.6], [52, 36]] }, { h: 3.9, pts: [[58, 37.6], [58, 36]] }] },
+  { key: "dust", group: "Utility", name: "Dust collection ducts", color: "#f97316", w: 0.24, pipe: true, desc: "13 woodworking stations → trunk ducts → 19,000 m³/h baghouse → chip skip",
+    segs: [{ h: 4.8, pts: [[22.6, 38.4], [30, 38.4], [30, 44.2], [30, 49.6]] }, { h: 4.8, pts: [[4, 18.6], [37.6, 18.6], [37.6, 38.4], [30, 38.4]] }, { h: 4.8, pts: [[60.6, 40.6], [55, 41.6], [37, 43], [30, 44.2]] }, { h: 4.8, pts: [[67, 29.6], [37.6, 29.6]] }, { h: 4.8, pts: [[32.5, 14.4], [32.5, 18.6]] }, { h: 4.8, pts: [[7, 15.5], [7, 18.6]] }, { h: 4.8, pts: [[10.5, 15.5], [10.5, 18.6]] }, { h: 4.8, pts: [[14, 15.5], [14, 18.6]] }, { h: 4.8, pts: [[52, 36.6], [52, 41.4]] }, { h: 4.8, pts: [[58, 36.6], [58, 41]] }] },
+  { key: "elec", group: "Utility", name: "Electrical feeders and cable trays", color: "#7c3aed", w: 0.1, pipe: true, desc: "MV line → 500 kVA transformer → trench → MDB → cable trays to every room and the utility yard",
+    segs: [{ h: 0.14, pts: [[95.5, 36.5], [88, 34], [85, 29.5], [83, 28], [79.6, 28], [74, 31.2]] }, { h: 0.14, pts: [[90.5, 29.5], [85, 29.5]] }, { h: 4.5, pts: [[74, 31.2], [74, 19.5], [2, 19.5]] }, { h: 4.5, pts: [[38.2, 19.5], [38.2, 40.4], [10, 40.4]] }, { h: 4.5, pts: [[38.2, 40.4], [70, 39]] }, { h: 4.5, pts: [[38.2, 19.5], [38.2, 7.6], [5, 7.6]] }, { h: 4.5, pts: [[38.2, 7.6], [63, 7.6]] }, { h: 4.5, pts: [[74, 31.2], [72, 40], [66, 45.8], [48, 47]] }] },
+  { key: "cool", group: "Utility", name: "Chilled / cooling water", color: "#38bdf8", w: 0.1, pipe: true, desc: "Cooling towers ↔ chillers ↔ air handling units (supply 7 °C, return 12.5 °C)",
+    segs: [{ h: 1.0, pts: [[72, 49], [68.6, 48.4], [66, 48.1]] }, { h: 2.4, pts: [[66, 46.4], [66, 45.2], [81, 43.4], [97.5, 41.5]] }] },
+  { key: "sewer", group: "Utility", name: "Sewer / drain", color: "#78716c", w: 0.1, pipe: true, desc: "Rest rooms, canteen and eyewash → front sewer → septic tank and sump",
+    segs: [{ h: 0.1, pts: [[20.3, 5.4], [20.3, -0.6], [139.5, -0.6], [139.5, 24], [142, 24]] }, { h: 0.1, pts: [[13, 6.4], [13, -0.6]] }, { h: 0.1, pts: [[28.8, 5.8], [28.8, -0.6]] }] },
+];
+const UP = new THREE.Vector3(0, 1, 0);
+FLOWS.forEach(f => {
+  const grp = new THREE.Group(); scene.add(grp); f.grp = grp; f.tex = [];
+  const col = new THREE.Color(f.color);
+  const coneM = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.25, roughness: 0.5 });
+  f.segs.forEach(sg => {
+    const pts = sg.pts.map(p => W(p[0], p[1], p.length > 2 ? p[2] : sg.h));
+    let curve;
+    if (sg.smooth) curve = new THREE.CatmullRomCurve3(pts, false, "centripetal");
+    else { curve = new THREE.CurvePath(); for (let i = 1; i < pts.length; i++) if (pts[i].distanceTo(pts[i - 1]) > 0.01) curve.add(new THREE.LineCurve3(pts[i - 1], pts[i])); }
+    const L = curve.getLength(); if (L < 0.1) return;
+    const tex = new THREE.CanvasTexture(f.dashed ? DASH : STRIPE); tex.wrapS = THREE.RepeatWrapping; tex.repeat.set(L / (f.pipe ? 2.5 : 3.2), 1);
+    const mat = new THREE.MeshStandardMaterial({ color: col, map: tex, roughness: 0.5, metalness: 0.05, emissive: col, emissiveIntensity: f.pipe ? 0.12 : 0.28 });
+    if (f.dashed) { mat.alphaMap = tex; mat.transparent = true; mat.alphaTest = 0.4; }
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(16, Math.round(L * (sg.smooth ? 3 : 1.2))), f.w, f.pipe ? 10 : 8, false), mat);
+    tube.castShadow = !f.pipe && (sg.h || 0) > 1; tube.userData.flow = f; grp.add(tube); f.tex.push(tex);
+    const step = f.pipe ? 14 : 9, coneG = new THREE.ConeGeometry(f.pipe ? f.w * 1.9 : f.w * 1.8, f.pipe ? f.w * 4.5 : f.w * 4.2, 12);
+    for (let s = Math.min(step, L * 0.5); s < L + 0.01; s += step) { const t = Math.min(1, s / L), p = curve.getPointAt(t), tg = curve.getTangentAt(t).normalize(); const c = new THREE.Mesh(coneG, coneM); c.position.copy(p); c.quaternion.setFromUnitVectors(UP, tg); c.userData.flow = f; grp.add(c); }
+    if (!f.pipe && (sg.h || 0) > 1.2) sg.pts.forEach(p => { if (p.length > 2) return; const base = W(p[0], p[1], 1.2), top = W(p[0], p[1], sg.h); const d = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, top.y - base.y, 6), coneM); d.position.copy(base).lerp(top, 0.5); d.userData.flow = f; grp.add(d); });
+  });
+});
+
+/* ---- Process steps (numbered badges) ---- */
+const STEPS = [
+  ["1", "Receive and acclimate 14 days", [14.9, 44.8], "#92400e"], ["2", "Kitting", [17, 36.4], "#92400e"],
+  ["3", "Wood processing", [28.5, 37.4], "#c026d3"], ["4", "Component preparation", [58, 38.6], "#c026d3"],
+  ["5a", "Body assembly + mold cure", [13, 28.6], "#c026d3"], ["5b", "Neck assembly + clamp cure", [48, 28.4], "#0d9488"],
+  ["6", "Shaping and sanding", [10.5, 17.3], "#c026d3"], ["7", "Spray finishing", [20, 17.8], "#c026d3"],
+  ["8", "Finish cure 48 h", [27, 17.8], "#c026d3"], ["9", "Level-sand and buff", [32.5, 17.6], "#0d9488"],
+  ["10", "Hardware installation + settle", [42, 17.7], "#1e3a8a"], ["11", "Quality inspection", [54, 17.7], "#1e3a8a"],
+  ["12", "Packaging", [67, 17.3], "#65a30d"], ["13", "Conveyor to Shipping", [100, 21.6], "#65a30d"], ["14", "Ship on the 16:30 truck", [128, 25], "#65a30d"],
+];
+
+/* ================= Labels (HTML, always face the camera) ================= */
+const labels = [];
+function addLabel(html, cls, pos, pri, opt = {}) { const el = document.createElement("div"); el.className = "lb " + cls; el.innerHTML = html; el.style.display = "none"; lblLayer.appendChild(el); const L = { el, pos, pri, cls, opt, w: 0, h: 0, vis: false }; labels.push(L); return L; }
+ROOMS.forEach(r => {
+  const poly = roomPoly[r.k]; let cx = 0, cy = 0; poly.forEach(p => { cx += p[0]; cy += p[1]; }); cx /= poly.length; cy /= poly.length;
+  const y = r.k === "HALL" ? 22.2 : Math.min(r.r[3] - 1.0, cy + 2.2);
+  const L = addLabel(`${r.n}<small hidden>${Math.round(roomArea[r.k])} m²</small>`, "room", W(r.k === "HALL" ? 100 : cx, y, 2.2), 2); L.area = L.el.querySelector("small");
+});
+STEPS.forEach(([n, t, p, c]) => { const L = addLabel(`<i style="background:${c}">${n}</i>${t}`, "step", W(p[0], p[1], 3.9), 1, { flowStep: true }); L.el.style.borderColor = c; });
+const shortNames = { "Dust collector baghouse, 158 m² cloth, 30 kW fan": "Dust collector", "Water tank, 40 m³ (2 days)": "Water tank 40 m³", "Fire water reserve tank, 190 m³": "Fire water tank 190 m³", "Water-cooled chillers, 80 TR": "Chillers 2 × 80 TR", "Cooling tower cells": "Cooling towers", "Air handling units with chilled-water coils": "Air handling units ×6", "Septic tank and sump with pump, 15 m³": "Septic tank + sump", "Pad-mounted transformer 500 kVA, 13.8 kV/400 V": "Transformer 500 kVA", "Standby diesel genset 250 kVA, acoustic enclosure": "Genset 250 kVA", "Automatic transfer switch (ATS) panel": "ATS panel", "Genset day tank, 1,000 L": "Day tank", "MV pole with fused cutouts and surge arresters": "MV pole 13.8 kV", "Utility metering kiosk": "Metering kiosk", "Rotary screw compressors, 22 kW VSD (duty + standby)": "Air compressors", "Fire pumps: 45 kW electric, diesel standby, 1.5 kW jockey": "Fire pumps", "Chip and dust skip": "Chip skip", "Earthing pits with test links": "Earth pits" };
+eqItems.forEach(it => {
+  if (!it.groups.length || it.room === "SITE") return;
+  const outside = it.room === "YARD" || it.room === "POWER";
+  let nm = outside ? shortNames[it.name] : it.name.replace(/,.*$/, "").replace(/ \(.*\)$/, "") + (it.qty > 1 && it.places.length > 1 ? ` ×${it.qty}` : "");
+  if (!nm) return;
+  const p = it.groups[0].position.clone(); p.y = Math.max(1.4, Math.min(it.h, 8) + 0.6);
+  if (it.type === "none") { const b = new THREE.Box3().setFromObject(it.groups[0]); b.getCenter(p); p.y = 1.6; if (it === eqItems.find(i => i.name.startsWith("Powered roller"))) p.copy(W(96, 19, 1.6)); }
+  addLabel(nm, outside ? "yard" : "eq", p, outside ? 3 : 4, { eq: it });
+});
+addLabel("POWER YARD", "site", W(90, 39, 3), 2.5);
+addLabel("UTILITY YARD", "site", W(52, 54.5, 2), 2.5);
+addLabel("MAIN ROAD", "site", W(60, -12.5, 0.5), 5);
+addLabel("ENTRANCE GATE", "site", W(48, -8, 0.5), 3);
+addLabel("EXIT GATE", "site", W(30, -8, 0.5), 3);
+addLabel("Guard house", "yard", W(39, -7.7, 3.2), 3);
+addLabel("PARKING LOT · 30 stalls", "site", W(100, 9, 0.5), 3);
+addLabel("Assembly point", "yard", W(112.5, 4.5, 1), 4);
+addLabel("Shipping dock", "yard", W(128, 11.2, 2.2), 4);
+addLabel("Compressor house", "yard", W(46.5, 51.6, 2.4), 3.5);
+addLabel("Fire pump house", "yard", W(52.5, 45.4, 2.4), 3.5);
+// plan dimensions (top plan only)
+const dimGroup = new THREE.Group(); dimGroup.visible = false; scene.add(dimGroup);
+const dimMat = new THREE.LineBasicMaterial({ color: 0x5b5130 });
+function dim(a, b, off, text) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L, nx = -uy * off, ny = ux * off;
+  const A = [a[0] + nx, a[1] + ny], B = [b[0] + nx, b[1] + ny], e = Math.sign(off) * 0.8;
+  const v = (p) => W(p[0], p[1], 0.7);
+  const seg = [A, B, a, [A[0] - uy * e, A[1] + ux * e], b, [B[0] - uy * e, B[1] + ux * e], [A[0] - ux * 0.5 - uy * 0.5, A[1] - uy * 0.5 + ux * 0.5], [A[0] + ux * 0.5 + uy * 0.5, A[1] + uy * 0.5 - ux * 0.5], [B[0] - ux * 0.5 - uy * 0.5, B[1] - uy * 0.5 + ux * 0.5], [B[0] + ux * 0.5 + uy * 0.5, B[1] + uy * 0.5 - ux * 0.5]];
+  dimGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(seg.map(v)), dimMat));
+  addLabel(text || `${L.toFixed(1)} m`, "dim", W((A[0] + B[0]) / 2, (A[1] + B[1]) / 2, 0.7), 0, { dim: true });
+}
+dim([0, 46], [79.5, 46], 13, "Main building 79.5 m");
+dim([0, 0], [0, 46], 16, "46.0 m");
+dim([79.3, 21], [120.5, 21], 3.2, "Hallway 41.2 × 4.0 m");
+dim([120.5, 26.67], [135.5, 26.67], 2.5, "Shipping 15.0 m");
+dim([135.5, 12], [135.5, 26.67], -9, "14.7 m");
+dim([82, 1.5], [119.5, 1.5], -9, "Parking 37.5 m");
+dim([97, 26], [97, 37.5], -3, "11.5 m");
+dim([83, 37.5], [97, 37.5], 6, "Power yard 14.0 m");
+dim([60, -1], [60, -6.5], -3, "Road 5.5 m");
+dim([0, 7], [0, 9], 4, "Aisle 2.0 m");
+dim([36, 26], [39, 26], 7.5, "Aisle 3.0 m");
+
+/* ================= Vehicles ================= */
+function vehicle(len, cab, cargoCol) {
+  const g = new THREE.Group();
+  const cargo = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, len), std(cargoCol, { roughness: 0.6 })); cargo.position.set(0, 1.8, -0.6); cargo.castShadow = true;
+  const c = new THREE.Mesh(new THREE.BoxGeometry(2.3, 2.1, cab), std(0x50677c, { roughness: 0.5 })); c.position.set(0, 1.45, len / 2 - 0.6 + cab / 2 + 0.1); c.castShadow = true;
+  [-1, 1].forEach(s => [len / 2 - 0.4, -len / 2 + 0.2, len / 2 + cab - 0.6].forEach(z => { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.3, 14), M.rubber); w.rotation.z = Math.PI / 2; w.position.set(s * 1.15, 0.45, z - 0.6); g.add(w); }));
+  g.add(cargo, c); g.visible = false; scene.add(g); return g;
+}
+const truck = vehicle(7.5, 2.2, 0xdedcd6), van = vehicle(4.2, 1.8, 0xd5d8da);
+function pathAt(pts, f) {
+  let L = 0; const seg = [];
+  for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(l); L += l; }
+  let d = Math.max(0, Math.min(1, f)) * L;
+  for (let i = 0; i < seg.length; i++) { if (d <= seg[i] || i === seg.length - 1) { const t = seg[i] ? Math.min(1, d / seg[i]) : 0, a = pts[i], b = pts[i + 1]; return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t, dx: b[0] - a[0], dy: b[1] - a[1] }; } d -= seg[i]; }
+}
+function place(v, pts, f, reverse) { const q = pathAt(pts, f), p = W(q.x, q.y); v.position.set(p.x, 0, p.z); let dx = q.dx, dz = -q.dy; if (reverse) { dx = -dx; dz = -dz; } v.rotation.y = Math.atan2(dx, dz); v.visible = true; }
+const T_IN = [[48, -15], [48, -3.4], [132, -3.4]], T_BACK = [[132, -3.4], [128, -1], [128, 5.2]], T_OUT = [[128, 5.2], [128, -4.8], [30, -4.8], [30, -15]];
+const V_IN = [[48, -15], [48, -3.4], [23, -3.4], ...arc(26.3, 270, 90, 24), [23, 49.3]], V_OUT = [[23, 49.3], [25, 50.6], [23, 51.8], ...arc(28.8, 90, 270, 24), [30, -5.8], [30, -15]];
+function updateVehicles(t) {
+  const r = tod(t); truck.visible = false; van.visible = false;
+  if (r >= 945 && r < 955) place(truck, T_IN, (r - 945) / 10, false);
+  else if (r >= 955 && r < 960) place(truck, T_BACK, (r - 955) / 5, true);
+  else if (r >= 960 && r < 990) place(truck, T_OUT, 0, false);
+  else if (r >= 990 && r < 1006) place(truck, T_OUT, (r - 990) / 16, false);
+  if (r >= 440 && r < 455) place(van, V_IN, (r - 440) / 15, false);
+  else if (r >= 455 && r < 495) place(van, V_IN, 1, false);
+  else if (r >= 495 && r < 515) place(van, V_OUT, (r - 495) / 20, false);
+  truck.updateMatrixWorld();
+}
+
+/* ================= Parts ================= */
+const PG = { lb: new THREE.CylinderGeometry(0.42, 0.42, 0.1, 22), ub: new THREE.CylinderGeometry(0.32, 0.32, 0.1, 22), hole: new THREE.CylinderGeometry(0.1, 0.1, 0.104, 14), neck: new THREE.BoxGeometry(0.1, 0.07, 0.78), head: new THREE.BoxGeometry(0.17, 0.05, 0.22), crate: new THREE.BoxGeometry(0.7, 0.3, 1.2), carton: new THREE.BoxGeometry(0.55, 0.17, 1.25) };
+function bodyMesh(part) {
+  const g = new THREE.Group();
+  const lb = new THREE.Mesh(PG.lb, M.raw); lb.position.z = 0.2; const ub = new THREE.Mesh(PG.ub, M.raw); ub.position.z = -0.28;
+  const hole = new THREE.Mesh(PG.hole, M.hole); hole.position.z = -0.04; const crate = new THREE.Mesh(PG.crate, M.crate); crate.position.y = 0.1;
+  const carton = new THREE.Mesh(PG.carton, M.carton); carton.position.set(0, 0.04, -0.3);
+  [lb, ub, hole, crate, carton].forEach(m => { m.userData.part = part; });
+  g.add(lb, ub, hole, crate, carton); g.userData = { lb, ub, hole, crate, carton }; scene.add(g); return g;
+}
+function neckMesh(part) { const g = new THREE.Group(); const n = new THREE.Mesh(PG.neck, M.neck), h = new THREE.Mesh(PG.head, M.neck); h.position.z = -0.48; [n, h].forEach(m => { m.userData.part = part; }); g.add(n, h); g.userData = { n, h }; scene.add(g); return g; }
+const meshes = new Map();
+const accentMat = new THREE.MeshStandardMaterial({ color: 0xd9601c, emissive: 0xd9601c, emissiveIntensity: 0.4 });
+const marker = new THREE.Group(); { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.07, 8, 40), accentMat); ring.rotation.x = Math.PI / 2; const pin = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.9, 16), accentMat); pin.rotation.x = Math.PI; pin.position.y = 2.6; marker.add(ring, pin); marker.visible = false; scene.add(marker); }
+const tmpV = new THREE.Vector3();
+function targetOf(part, qIdx) {
+  const L = part.loc; if (!L) return null;
+  if (L.k === "q") { const st = ST[L.pool]; return slotPos(st.q, qIdx.get(part) || 0, 1.0, st.sz || 1.35); }
+  if (L.k === "s") { const [x, y] = ST[L.pool].pos[L.i]; return W(x, y, ST[L.pool].h + 0.3); }
+  if (L.k === "d") { if (L.zone === "conveyor") return convAt(Math.min(1, (S.now - L.from) / 2.3)); const z = ZONES[L.zone]; return slotPos(z.r, L.slot, z.sx || 1.0, z.sz || 1.35, 0.3, z.base || 0.42); }
+  if (L.k === "truck") return truck.localToWorld(tmpV.set(((L.i % 3) - 1) * 0.65, 0.7 + Math.floor(L.i / 18) * 0.2, 2.2 - Math.floor((L.i % 18) / 3) * 1.3)).clone();
+  return null;
+}
+let tracked = null, follow = false;
+const neckOff = new THREE.Vector3(0, 0.03, -0.9);
+function syncParts(dt) {
+  const qIdx = new Map(); Object.values(P).forEach(p => p.q.forEach((j, i) => qIdx.set(j.part, i)));
+  const k = reduceMotion ? 1 : Math.min(1, dt * 7), live = new Set();
+  S.guitars.forEach(g => {
+    for (const part of [g.body, g.neck]) {
+      let m = meshes.get(part), tgt;
+      if (part.kind === "n" && g.joined) { const bm = meshes.get(g.body); tgt = bm ? bm.position.clone().add(neckOff) : null; }
+      else tgt = targetOf(part, qIdx);
+      const hide = !tgt || (part.kind === "n" && (!g.split || g.carton));
+      if (!m) { if (hide) continue; m = part.kind === "b" ? bodyMesh(part) : neckMesh(part); m.position.copy(tgt); meshes.set(part, m); }
+      live.add(part); m.visible = !hide; if (hide) continue;
+      if (part.kind === "n" && g.joined) m.position.copy(tgt); else m.position.lerp(tgt, k);
+      if (part.kind === "b") { const u = m.userData, kit = !g.split, boxed = !!g.carton; u.crate.visible = kit; u.carton.visible = boxed; u.lb.visible = u.ub.visible = u.hole.visible = !kit && !boxed; const mat = part.finished ? M.fin : M.raw; u.lb.material = mat; u.ub.material = mat; }
+      else { const mat = part.finished ? M.neckFin : M.neck; m.userData.n.material = mat; m.userData.h.material = mat; }
+    }
+  });
+  meshes.forEach((m, part) => { if (!live.has(part)) { scene.remove(m); meshes.delete(part); } });
+  if (tracked && meshes.get(tracked.body) && !tracked.gone) { const bm = meshes.get(tracked.body); marker.visible = bm.visible; marker.position.copy(bm.position); marker.position.y += 0.05 + (reduceMotion ? 0 : Math.sin(performance.now() / 300) * 0.08); if (follow && camera === persp) ctlP.target.lerp(bm.position, Math.min(1, dt * 3)); }
+  else marker.visible = false;
+}
+function syncStations() {
+  const work = inShift(S.now);
+  POOL_DEF.forEach(([key]) => P[key].srv.forEach((s, i) => { const busy = s.job && work && S.now >= s.start; const col = busy ? 0x2fa060 : work ? 0xd39a1c : 0x9aa5b0; lamps[key][i].color.setHex(col); lamps[key][i].emissive.setHex(col); }));
+}
+
+/* ================= Views ================= */
+const VIEWS = {
+  connection: { p: W(-4, -26, 20), t: W(42, 26, 1), fov: 50 },
+  iso: { p: W(175, -70, 115), t: W(66, 22, 0), fov: 38 },
+  power: { p: W(103, 21, 9.5), t: W(88.5, 32, 1.2), fov: 50 },
+  plan: { ortho: true },
+};
+let view = "connection", camAnim = null;
+const PLAN_C = W(69, 22);
+function fitOrtho() { const w = vp.clientWidth || 800, h = vp.clientHeight || 500, a = w / h, halfW = Math.max(84, 40 * a); ortho.left = -halfW; ortho.right = halfW; ortho.top = halfW / a; ortho.bottom = -halfW / a; }
+function setView(v) {
+  view = v; follow = false; $("#trkFollow").classList.remove("on");
+  document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  const V = VIEWS[v], plan = !!V.ortho;
+  dimGroup.visible = plan; labels.forEach(L => { if (L.area) { L.area.hidden = !plan; L.w = 0; } });
+  $("#vpnote").textContent = plan ? "Top plan, orthographic · north up · drag to pan · scroll to zoom" : "Section cut at 1.8 m · drag to orbit · right-drag to pan · scroll to zoom";
+  if (plan) {
+    camera = ortho; controls = ctlO; ctlP.enabled = false; ctlO.enabled = true; camAnim = null;
+    ortho.position.set(PLAN_C.x, 300, PLAN_C.z + 0.01); ctlO.target.copy(PLAN_C); ortho.zoom = 1; fitOrtho(); ortho.updateProjectionMatrix(); ctlO.update();
+    return;
+  }
+  camera = persp; controls = ctlP; ctlO.enabled = false; ctlP.enabled = true;
+  persp.fov = V.fov; persp.updateProjectionMatrix();
+  if (reduceMotion) { persp.position.copy(V.p); ctlP.target.copy(V.t); camAnim = null; return; }
+  camAnim = { p0: persp.position.clone(), t0: ctlP.target.clone(), p: V.p, t: V.t, s: performance.now() };
+}
+document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
+let labelsOn = true;
+$("#lblBtn").addEventListener("click", e => { labelsOn = !labelsOn; e.currentTarget.classList.toggle("on", labelsOn); lblLayer.hidden = !labelsOn; });
+function flyTo(it) {
+  const g = it.groups[0]; if (!g) return;
+  const box = new THREE.Box3().setFromObject(g), c = box.getCenter(new THREE.Vector3()), size = Math.min(40, Math.max(4, box.getSize(new THREE.Vector3()).length()));
+  if (view === "plan") setView("connection");
+  view = "custom"; document.querySelectorAll("[data-view]").forEach(b => b.classList.remove("on"));
+  const p = c.clone().add(new THREE.Vector3(size * 0.7, size * 0.7 + 4, size * 0.9 + 3));
+  if (reduceMotion) { persp.position.copy(p); ctlP.target.copy(c); } else camAnim = { p0: persp.position.clone(), t0: ctlP.target.clone(), p, t: c, s: performance.now() };
+  highlight(it);
+}
+let hl = null;
+function highlight(it) {
+  if (hl) { scene.remove(hl.h); hl = null; }
+  const grp = new THREE.Group(); it.groups.forEach(g => { const b = new THREE.BoxHelper(g, 0xd9601c); b.material.depthTest = false; b.renderOrder = 9; grp.add(b); });
+  scene.add(grp); hl = { h: grp, until: performance.now() + 4500 };
+}
+
+/* ================= Legend & panel content ================= */
+const legend = $("#legend");
+function buildLegend() {
+  const grpHtml = g => FLOWS.filter(f => f.group === g).map(f => `<label><input type="checkbox" id="flow-${f.key}" data-flow="${f.key}" checked><span class="sw${f.dashed ? " dash" : ""}" style="background-color:${f.color}"></span>${f.name}</label>`).join("");
+  legend.innerHTML = `<button class="min" id="legMin" aria-label="Collapse legend">–</button><h3>Process flows</h3><div class="grid">${grpHtml("Process")}</div><h3>Utility connections</h3><div class="grid">${grpHtml("Utility")}</div>`;
+  legend.querySelectorAll("[data-flow]").forEach(cb => cb.addEventListener("change", () => { FLOWS.find(x => x.key === cb.dataset.flow).grp.visible = cb.checked; }));
+  $("#legMin").addEventListener("click", () => { const parts = legend.querySelectorAll(".grid, h3"); const hide = !parts[0].hidden; parts.forEach(x => { x.hidden = hide; }); $("#legMin").textContent = hide ? "Flow legend +" : "–"; $("#legMin").style.position = hide ? "static" : ""; });
+}
+buildLegend();
+$("#flowList").innerHTML = FLOWS.map(f => `<li><span class="sw" style="background:${f.color}"></span><div><b>${f.name}</b> <span>· ${f.group}</span><br><span>${f.desc}</span></div></li>`).join("");
+$("#stepList").innerHTML = STEPS.map(([n, t, , c]) => `<li><i style="background:${c}">${n}</i>${t}</li>`).join("");
+
+const fmt1 = v => v.toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+function buildEquipTable() {
+  const order = ["RM", "WP", "CP", "BA", "NA", "ER", "SS", "FIN", "HW", "QI", "PK", "HALL", "SH", "CN", "SF", "LB", "EM", "OF", "YARD", "POWER", "SITE"];
+  let html = "", eqTotal = 0, kwTotal = 0, bldEq = 0;
+  order.forEach(rk => {
+    const items = eqItems.filter(i => i.room === rk); if (!items.length) return;
+    const sum = items.reduce((s, i) => s + i.qty * i.fw * i.fd, 0), kw = items.reduce((s, i) => s + i.kw, 0);
+    eqTotal += sum; kwTotal += kw; const room = ROOMS.find(r => r.k === rk); if (room) bldEq += sum;
+    const head = room ? `${room.n} <small>· floor ${fmt1(roomArea[rk])} m² · equipment ${fmt1(sum)} m² (${Math.round(sum / roomArea[rk] * 100)}%)</small>` : `${ROOM_GROUPS[rk]} <small>· equipment ${fmt1(sum)} m²</small>`;
+    html += `<tr class="eqroom"><td colspan="5">${head}</td></tr>`;
+    items.forEach(i => { const each = i.fw * i.fd; html += `<tr class="eqrow" data-eq="${i.idx}" tabindex="0"><td><b>${i.name}</b><span class="fn">${i.fn}</span></td><td class="n">${i.qty}</td><td class="n">${i === convItem ? "55.3 m × 0.8" : each ? fmt1(each) : "–"}</td><td class="n">${fmt1(i.qty * each)}</td><td class="n">${i.kw ? fmt1(i.kw) : "–"}</td></tr>`; });
+  });
+  html += `<tr class="tot"><td>All equipment</td><td class="n">${eqItems.reduce((s, i) => s + i.qty, 0)}</td><td></td><td class="n">${fmt1(eqTotal)}</td><td class="n">${fmt1(kwTotal)}</td></tr>`;
+  $("#eqRows").innerHTML = html;
+  const bld = mainArea + roomArea.HALL + roomArea.SH, roomsSum = ROOMS.reduce((s, r) => s + roomArea[r.k], 0);
+  $("#eqSummary").innerHTML = [
+    ["Building floor area", `${fmt1(bld)} m²`], ["Rooms incl. hallway and shipping", `${fmt1(roomsSum)} m²`],
+    ["Aisles, corridors and walls", `${fmt1(bld - roomsSum)} m²`], ["Equipment inside the building", `${fmt1(bldEq)} m² (${Math.round(bldEq / bld * 100)}%)`],
+    ["Conveyor", `${fmt1(CONV_LEN)} m · ${fmt1(CONV_LEN * 0.8)} m²`], ["Connected load (listed)", `${fmt1(kwTotal)} kW`],
+  ].map(([a, b]) => `<div class="kpi"><span>${a}</span><b style="font-size:15px">${b}</b></div>`).join("");
+  $("#eqRows").querySelectorAll(".eqrow").forEach(tr => { const go = () => flyTo(eqItems[+tr.dataset.eq]); tr.addEventListener("click", go); tr.addEventListener("keydown", e => { if (e.key === "Enter") go(); }); });
+}
+buildEquipTable();
+document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
+  ["live", "equip", "flows"].forEach(t => { $("#tab-" + t).hidden = t !== b.dataset.tab; });
+}));
+
+/* ================= Picking & tooltips ================= */
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), tip = $("#tip");
+let downAt = null;
+function pick(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const objs = []; meshes.forEach(m => { if (m.visible) objs.push(...m.children); });
+  const hp = ray.intersectObjects(objs, false).find(h => h.object.visible); if (hp) return { part: hp.object.userData.part, r };
+  const hits = ray.intersectObjects(eqGroups.concat(FLOWS.filter(f => f.grp.visible).map(f => f.grp), pickRooms), true);
+  for (const h of hits) { const u = h.object.userData; if (u.eq) return { eq: u.eq, r }; if (u.flow) return { flow: u.flow, r }; if (u.room) return { room: u.room, r }; }
+  return { r };
+}
+const fmt = t => { const r = tod(t); return `D${Math.floor(t / DAY) + 1} ${String(Math.floor(r / 60)).padStart(2, "0")}:${String(Math.floor(r % 60)).padStart(2, "0")}`; };
+function partStatus(part) {
+  const L = part.loc, g = part.g; if (part.kind === "n" && g.joined) return partStatus(g.body); if (!L) return "";
+  if (L.k === "q") return `Waiting for ${P[L.pool].name.toLowerCase()} (position ${P[L.pool].q.findIndex(j => j.part === part) + 1})`;
+  if (L.k === "s") return `${P[L.pool].name}, finishes ${fmt(P[L.pool].srv[L.i].end)}`;
+  if (L.k === "d") return ZLABEL[L.zone] + (L.until ? `, until ${fmt(L.until)}` : "");
+  if (L.k === "truck") return "On the truck to the customer"; return "";
+}
+function roomInfo(room) {
+  const pools = POOL_DEF.filter(d => d[2] === room.k).map(d => P[d[0]]); let wip = 0;
+  S.guitars.forEach(g => [g.body, g.neck].forEach(p => { const L = p.loc; if (!L || (p.kind === "n" && g.joined)) return; const rk = L.k === "q" || L.k === "s" ? P[L.pool].room : L.k === "d" ? ZROOM[L.zone] : null; if (rk === room.k) wip++; }));
+  const eqA = eqItems.filter(i => i.room === room.k).reduce((s, i) => s + i.qty * i.fw * i.fd, 0);
+  return `<b>${room.n}</b><div class="m">Floor ${fmt1(roomArea[room.k])} m² · equipment ${fmt1(eqA)} m²</div>${wip ? `<div class="m">${wip} parts in the room now</div>` : ""}${pools.map(p => `<div class="m">${p.name}: ${p.srv.filter(s => s.job).length}/${p.n} busy · queue ${p.q.length} · ${Math.round(util(p) * 100)}%</div>`).join("")}`;
+}
+let moveRaf = 0;
+renderer.domElement.addEventListener("pointermove", ev => {
+  if (moveRaf) return; moveRaf = requestAnimationFrame(() => { moveRaf = 0;
+    const h = pick(ev);
+    if (h.part) { const g = h.part.g; tip.innerHTML = `<b>Guitar ${gid(g)} · ${partName(h.part)}</b><div class="m">${partStatus(h.part)}</div><div class="m">Released ${fmt(g.rel)} · click to track</div>`; }
+    else if (h.eq) { const i = h.eq; tip.innerHTML = `<b>${i.name}</b><div>${i.fn}</div><div class="m">Qty ${i.qty}${i.kw ? ` · ${i.kw} kW` : ""} · ${i === convItem ? "55.3 m × 0.8 m" : fmt1(i.fw * i.fd) + " m² each"} · ${fmt1(i.qty * i.fw * i.fd)} m² total</div>`; }
+    else if (h.flow) { tip.innerHTML = `<b><span style="display:inline-block;width:14px;height:5px;border-radius:2px;margin-right:5px;vertical-align:middle;background:${h.flow.color}"></span>${h.flow.name}</b><div>${h.flow.desc}</div>`; }
+    else if (h.room) tip.innerHTML = roomInfo(h.room);
+    else { tip.hidden = true; return; }
+    tip.hidden = false;
+    const x = ev.clientX - h.r.left + 14, y = ev.clientY - h.r.top + 14;
+    tip.style.left = Math.max(4, Math.min(x, h.r.width - 300)) + "px"; tip.style.top = Math.max(4, Math.min(y, h.r.height - 120)) + "px";
+  });
+});
+renderer.domElement.addEventListener("pointerleave", () => { tip.hidden = true; });
+renderer.domElement.addEventListener("pointerdown", ev => { downAt = [ev.clientX, ev.clientY]; camAnim = null; });
+renderer.domElement.addEventListener("pointerup", ev => {
+  if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 5) return;
+  const h = pick(ev); if (h.part) track(h.part.g); else if (h.eq) highlight(h.eq);
+});
+function track(g) { tracked = g; renderTrack(true); document.querySelector('[data-tab="live"]').click(); }
+$("#trkNew").addEventListener("click", () => { let g = null; S.guitars.forEach(x => { if (!g || x.id > g.id) g = x; }); if (g) track(g); });
+$("#trkFollow").addEventListener("click", e => { if (camera !== persp) setView("connection"); follow = !follow; e.currentTarget.classList.toggle("on", follow); e.currentTarget.setAttribute("aria-pressed", follow); camAnim = null; });
+
+/* ================= Controls & live panel ================= */
+const SPEEDS = [[2, "2 min/s"], [10, "10"], [30, "30"], [120, "120"]];
+let speed = 10, playing = true;
+const spEl = $("#speeds");
+SPEEDS.forEach(([v, l]) => { const b = document.createElement("button"); b.textContent = l; b.dataset.v = v; b.addEventListener("click", () => { speed = v; spEl.querySelectorAll("button").forEach(x => x.classList.toggle("on", +x.dataset.v === v)); }); spEl.appendChild(b); });
+spEl.querySelector('[data-v="10"]').classList.add("on");
+$("#play").addEventListener("click", e => { playing = !playing; e.currentTarget.textContent = playing ? "Pause" : "Play"; e.currentTarget.classList.toggle("on", playing); e.currentTarget.setAttribute("aria-pressed", playing); });
+$("#restart").addEventListener("change", e => { const v = e.target.value; e.target.value = ""; if (!v) return; meshes.forEach(m => scene.remove(m)); meshes.clear(); tracked = null; init(v); renderTrack(true); lastLogLen = -1; buildLog(); });
+const tl = $("#tl"), T0 = 360, T1 = 1080, pct = m => ((m - T0) / (T1 - T0) * 100) + "%";
+WIN.forEach(([a, b]) => { const d = document.createElement("div"); d.className = "w"; d.style.left = pct(a); d.style.width = `calc(${pct(b)} - ${pct(a)})`; tl.appendChild(d); });
+{ const d = document.createElement("div"); d.className = "d"; d.style.left = pct(DISPATCH); d.title = "Truck 16:30"; tl.appendChild(d); }
+const nowEl = document.createElement("div"); nowEl.className = "now"; tl.appendChild(nowEl);
+const rows = {};
+POOL_DEF.forEach(([key, name, room, n]) => {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${name}<div style="font-size:11px;color:var(--muted)">${ROOMS.find(r => r.k === room).n} · ${n} stn</div></td><td><div class="dots">${"<span class='dot'></span>".repeat(n)}</div></td><td class="n">0</td><td class="n"><span>0%</span><div class="ubar"><i style="width:0"></i></div></td>`;
+  $("#stRows").appendChild(tr);
+  rows[key] = { dots: tr.querySelectorAll(".dot"), q: tr.children[2], u: tr.querySelector(".n span"), bar: tr.querySelector(".ubar i") };
+});
+let lastLogLen = -1, lastTop = null;
+function buildLog() {
+  const top = S.log[0]; if (S.log.length === lastLogLen && top === lastTop) return; lastLogLen = S.log.length; lastTop = top;
+  $("#log").innerHTML = S.log.slice(0, 8).map(([t, m, bad]) => `<li class="${bad ? "bad" : ""}"><time>${fmt(t)}</time><span>${m}</span></li>`).join("") || `<li><span class="empty">Events appear here as the shift runs.</span></li>`;
+}
+let lastHist = -1;
+function renderTrack(force) {
+  const id = $("#trkId"), ol = $("#trkHist");
+  if (!tracked) { id.textContent = "No guitar tracked"; if (force || lastHist !== -2) ol.innerHTML = `<li class="empty" style="display:block;color:var(--muted);font-weight:400">Click any guitar in the 3D view, or track the newest kit to follow it from kitting to the truck.</li>`; lastHist = -2; return; }
+  const g = tracked; id.textContent = `Guitar ${gid(g)}${g.shipped ? " · shipped" : ""}`;
+  const visible = g.hist.filter(h => h[0] <= S.now);
+  if (!force && visible.length === lastHist) return; lastHist = visible.length;
+  ol.innerHTML = visible.map(([t, x]) => `<li><time>${fmt(t)}</time><span>${x}</span></li>`).join(""); ol.scrollTop = ol.scrollHeight;
+}
+function panel() {
+  const r = tod(S.now); $("#clk").textContent = fmt(S.now);
+  const ch = $("#shift"), work = inShift(S.now), present = r >= 480 && r < 1020;
+  ch.textContent = work ? "Working" : present ? (r >= 720 && r < 780 ? "Lunch" : "Break") : "Off shift · curing continues";
+  ch.className = "chip " + (work ? "work" : present ? "break" : "");
+  nowEl.style.left = `calc(${pct(Math.max(T0, Math.min(T1, r)))} - 1px)`;
+  POOL_DEF.forEach(([key]) => { const p = P[key], R = rows[key], u = util(p); p.srv.forEach((s, i) => { const busy = s.job && work && S.now >= s.start; R.dots[i].className = "dot " + (busy ? "busy" : work ? "idle" : ""); }); R.q.textContent = p.q.length; R.u.textContent = Math.round(u * 100) + "%"; R.bar.style.width = Math.min(100, u * 100) + "%"; R.bar.className = u > 0.82 ? "hi" : ""; });
+  let wip = 0; S.guitars.forEach(g => { if (!g.shipped) wip++; });
+  $("#kShip").textContent = S.shipped; $("#kTp").textContent = S.dispatches ? (S.shipped / S.dispatches).toFixed(1) : "–";
+  $("#kLt").textContent = S.leads.length ? (S.leads.reduce((a, b) => a + b, 0) / S.leads.length).toFixed(2) : "–";
+  $("#kWip").textContent = wip; $("#kCure").textContent = S.Z.cure.filter(Boolean).length;
+  $("#kFpy").textContent = S.inspected ? ((1 - S.failed / S.inspected) * 100).toFixed(1) : "–";
+  buildLog(); renderTrack(false);
+}
+
+/* ================= Label layout (decluttered, highest priority first) ================= */
+const projV = new THREE.Vector3();
+function layoutLabels() {
+  if (!labelsOn) return;
+  const w = vp.clientWidth, h = vp.clientHeight, placed = [], isPlan = camera === ortho, z = ortho.zoom, cand = [];
+  const stepsOn = FLOWS[1].grp.visible || FLOWS[2].grp.visible;
+  for (const L of labels) {
+    let show = true;
+    if (L.opt.dim) show = isPlan;
+    else if (L.opt.flowStep) show = !isPlan && stepsOn;
+    else if (L.cls === "eq") show = isPlan ? z > 2.6 : camera.position.distanceTo(L.pos) < 42;
+    else if (L.cls === "yard") show = isPlan ? z > 1.6 : camera.position.distanceTo(L.pos) < 95;
+    if (show) { projV.copy(L.pos).project(camera); if (projV.z > 1 || projV.z < -1 || Math.abs(projV.x) > 1.05 || Math.abs(projV.y) > 1.05) show = false; }
+    if (!show) { if (L.vis) { L.el.style.display = "none"; L.vis = false; } continue; }
+    cand.push([L, (projV.x + 1) / 2 * w, (1 - projV.y) / 2 * h, isPlan ? 0 : camera.position.distanceTo(L.pos)]);
+  }
+  cand.sort((a, b) => a[0].pri - b[0].pri || a[3] - b[3]);
+  for (const [L, x, y] of cand) {
+    if (!L.vis) { L.el.style.display = ""; L.vis = true; }
+    if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; }
+    const r = [x - L.w / 2, y - L.h / 2, x + L.w / 2, y + L.h / 2];
+    if (L.pri > 0 && placed.some(q => r[0] < q[2] + 3 && r[2] > q[0] - 3 && r[1] < q[3] + 2 && r[3] > q[1] - 2)) { L.el.style.display = "none"; L.vis = false; continue; }
+    placed.push(r); L.el.style.transform = `translate(${Math.round(r[0])}px, ${Math.round(r[1])}px)`;
+  }
+}
+if (document.fonts) document.fonts.ready.then(() => labels.forEach(L => { L.w = 0; }));
+
+/* ================= Main loop ================= */
+function resize() { const w = vp.clientWidth, h = vp.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); persp.aspect = w / h; persp.updateProjectionMatrix(); fitOrtho(); ortho.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(vp); resize();
+init("steady"); panel();
+persp.position.copy(VIEWS.connection.p); ctlP.target.copy(VIEWS.connection.t); persp.fov = VIEWS.connection.fov; persp.updateProjectionMatrix();
+let last = performance.now(), acc = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing) { const r = tod(S.now), night = r < 435 || r > 1030; advance(S.now + dt * ($("#skip").checked && night ? Math.max(speed, 300) : speed)); }
+  if (camAnim) { const f = Math.min(1, (now - camAnim.s) / 900), e = f * f * (3 - 2 * f); persp.position.lerpVectors(camAnim.p0, camAnim.p, e); ctlP.target.lerpVectors(camAnim.t0, camAnim.t, e); if (f >= 1) camAnim = null; }
+  if (!reduceMotion) FLOWS.forEach(f => { if (f.grp.visible) f.tex.forEach(t => { t.offset.x -= dt * (f.pipe ? 0.35 : 0.6); }); });
+  if (hl && now > hl.until) { scene.remove(hl.h); hl = null; }
+  updateVehicles(S.now); syncParts(dt); syncStations();
+  controls.update(); renderer.render(scene, camera); layoutLabels();
+  acc += dt; if (acc > 0.25) { acc = 0; panel(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
